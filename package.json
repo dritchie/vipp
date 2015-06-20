@@ -1,0 +1,27 @@
+{
+  "name": "vipp",
+  "description": "Experiments with variational inference on probabilistic programs",
+  "version": "0.0.1",
+  "author": "dritchie",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dritchie/vipp"
+  },
+  "dependencies": {
+    "numeric": "~1.2.6",
+    "underscore": "^1.8.3",
+    "sweetify": "^0.4.0"
+  },
+  "bugs": {
+    "url": "https://github.com/dritchie/vipp/issues"
+  },
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "keywords": [
+    "probabilistic",
+    "programming",
+    "variational"
+  ],
+  "preferGlobal": true
+}
