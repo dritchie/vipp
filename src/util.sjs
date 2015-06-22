@@ -29,10 +29,9 @@ function sum(xs) {
   if (xs.length === 0) {
     return 0.0;
   } else {
-    var total = _.reduce(xs,
-        function(a, b) {
-          return a + b;
-        });
+    var total = 0;
+    var n = xs.length;
+    while (n--) total = total + xs[n];
     return total;
   }
 }
@@ -57,7 +56,7 @@ function logsumexp(a) {
   var m = Math.max.apply(null, a);
   var sum = 0;
   for (var i = 0; i < a.length; ++i) {
-    sum += (a[i] === -Infinity ? 0 : Math.exp(a[i] - m));
+    sum = sum + (a[i] === -Infinity ? 0 : Math.exp(a[i] - m));
   }
   return m + Math.log(sum);
 }

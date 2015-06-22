@@ -131,6 +131,8 @@ function gaussianGrad(params, x) {
 
 var gaussianERP = new ERP(gaussianSample, gaussianScore, { grad: gaussianGrad });
 
+// NOTE: Multivariate Gaussian stuff won't work with AD, since it uses numeric.js to do
+//    a bunch of calculations.
 function multivariateGaussianSample(params) {
   var mu = params[0];
   var cov = params[1];
@@ -182,11 +184,11 @@ var gammaCof = [
 function logGamma(xx) {
   var x = xx - 1.0;
   var tmp = x + 5.5;
-  tmp -= (x + 0.5) * Math.log(tmp);
+  tmp = tmp - (x + 0.5) * Math.log(tmp);
   var ser = 1.000000000190015;
   for (var j = 0; j <= 5; j++) {
-    x++;
-    ser += gammaCof[j] / x;
+    x = x + 1;
+    ser = ser + gammaCof[j] / x;
   }
   return -tmp + Math.log(2.5066282746310005 * ser);
 }
@@ -202,7 +204,7 @@ function digamma(x) {
     var n = Math.ceil(6 - x);
     var psi = digamma(x + n);
     for (var i = 0; i < n; i++) {
-      psi -= 1 / (x + i);
+      psi = psi - 1 / (x + i);
     }
     return psi;
   } else {
@@ -210,8 +212,8 @@ function digamma(x) {
     var invsq = 1 / (x * x);
     var z = 1;
     for (var i = 0; i < digammaCof.length; i++) {
-      z *= invsq;
-      psi += digammaCof[i] * z;
+      z = z * invsq;
+      psi = psi + digammaCof[i] * z;
     }
     return psi;
   }
@@ -329,10 +331,10 @@ function binomialSample(params) {
     var x = betaSample([a, b]);
     if (x >= p) {
       n = a - 1;
-      p /= x;
+      p = p / x;
     }
     else {
-      k += a;
+      k = k + a;
       n = b - 1;
       p = (p - x) / (1 - x);
     }
@@ -341,7 +343,7 @@ function binomialSample(params) {
   for (var i = 0; i < n; i++) {
     u = Math.random();
     if (u < p) {
-      k++;
+      k = k + 1;
     }
   }
   return k || 0;
@@ -390,7 +392,7 @@ var binomialERP = new ERP(
 function fact(x) {
   var t = 1;
   while (x > 1) {
-    t *= x--;
+    t = t * x--;
   }
   return t;
 }
@@ -424,15 +426,15 @@ var poissonERP = new ERP(
         if (x > mu) {
           return (k + binomialSample([mu / x, m - 1])) || 0;
         } else {
-          mu -= x;
-          k += m;
+          mu = mu - x;
+          k = k + m;
         }
       }
       var emu = Math.exp(-mu);
       var p = 1;
       do {
-        p *= Math.random();
-        k++;
+        p = p * Math.random();
+        k = k + 1;
       } while (p > emu);
       return (k - 1) || 0;
     },
@@ -454,7 +456,7 @@ function dirichletSample(params) {
     ssum = ssum + t;
   }
   for (var j = 0; j < theta.length; j++) {
-    theta[j] /= ssum;
+    theta[j] = theta[j] / ssum;
   }
   return theta;
 }
@@ -464,12 +466,12 @@ function dirichletScore(params, val) {
   var theta = val;
   var asum = 0;
   for (var i = 0; i < alpha.length; i++) {
-    asum += alpha[i];
+    asum = asum + alpha[i];
   }
   var logp = logGamma(asum);
   for (var j = 0; j < alpha.length; j++) {
-    logp += (alpha[j] - 1) * Math.log(theta[j]);
-    logp -= logGamma(alpha[j]);
+    logp = logp + (alpha[j] - 1) * Math.log(theta[j]);
+    logp = logp - logGamma(alpha[j]);
   }
   return logp;
 }
@@ -493,7 +495,7 @@ function multinomialSample(theta) {
   var k = theta.length;
   var probAccum = 0;
   for (var i = 0; i < k; i++) {
-    probAccum += theta[i];
+    probAccum = probAccum + theta[i];
     if (probAccum >= x) {
       return i;
     } //FIXME: if x=0 returns i=0, but this isn't right if theta[0]==0...
