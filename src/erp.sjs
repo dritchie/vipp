@@ -19,15 +19,12 @@
 // - erp.grad(params, val) gives the gradient of score at val wrt params.
 // - erp.proposer is an erp for making mh proposals conditioned on the previous value
 
-import macros from './ad/macros'
-__initAD;
-
 'use strict';
 
-var numeric = require('numeric');
+// var numeric = require('numeric');
 var _ = require('underscore');
 var assert = require('assert');
-var util = require('./util.sjs');
+var util = require('src/util.js');
 
 var LOG_2PI = 1.8378770664093453;
 
@@ -131,29 +128,29 @@ function gaussianGrad(params, x) {
 
 var gaussianERP = new ERP(gaussianSample, gaussianScore, { grad: gaussianGrad });
 
-// NOTE: Multivariate Gaussian stuff won't work with AD, since it uses numeric.js to do
-//    a bunch of calculations.
-function multivariateGaussianSample(params) {
-  var mu = params[0];
-  var cov = params[1];
-  var xs = mu.map(function() {return gaussianSample([0, 1])});
-  var svd = numeric.svd(cov);
-  var scaledV = numeric.transpose(svd.V).map(function(x) {return numeric.mul(numeric.sqrt(svd.S), x)});
-  xs = numeric.dot(xs, numeric.transpose(scaledV));
-  return numeric.add(xs, mu);
-}
+// // NOTE: Multivariate Gaussian stuff won't work with AD, since it uses numeric.js to do
+// //    a bunch of calculations.
+// function multivariateGaussianSample(params) {
+//   var mu = params[0];
+//   var cov = params[1];
+//   var xs = mu.map(function() {return gaussianSample([0, 1])});
+//   var svd = numeric.svd(cov);
+//   var scaledV = numeric.transpose(svd.V).map(function(x) {return numeric.mul(numeric.sqrt(svd.S), x)});
+//   xs = numeric.dot(xs, numeric.transpose(scaledV));
+//   return numeric.add(xs, mu);
+// }
 
-function multivariateGaussianScore(params, x) {
-  var mu = params[0];
-  var cov = params[1];
-  var n = mu.length;
-  var coeffs = n * LOG_2PI + Math.log(numeric.det(cov));
-  var xSubMu = numeric.sub(x, mu);
-  var exponents = numeric.dot(numeric.dot(xSubMu, numeric.inv(cov)), xSubMu);
-  return -0.5 * (coeffs + exponents);
-}
+// function multivariateGaussianScore(params, x) {
+//   var mu = params[0];
+//   var cov = params[1];
+//   var n = mu.length;
+//   var coeffs = n * LOG_2PI + Math.log(numeric.det(cov));
+//   var xSubMu = numeric.sub(x, mu);
+//   var exponents = numeric.dot(numeric.dot(xSubMu, numeric.inv(cov)), xSubMu);
+//   return -0.5 * (coeffs + exponents);
+// }
 
-var multivariateGaussianERP = new ERP(multivariateGaussianSample, multivariateGaussianScore);
+// var multivariateGaussianERP = new ERP(multivariateGaussianSample, multivariateGaussianScore);
 
 var discreteERP = new ERP(
     function discreteSample(params) {
@@ -619,7 +616,7 @@ module.exports = {
   gammaERP: gammaERP,
   gaussianERP: gaussianERP,
   multinomialSample: multinomialSample,
-  multivariateGaussianERP: multivariateGaussianERP,
+  // multivariateGaussianERP: multivariateGaussianERP,
   poissonERP: poissonERP,
   randomIntegerERP: randomIntegerERP,
   uniformERP: uniformERP,

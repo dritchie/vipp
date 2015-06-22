@@ -298,6 +298,7 @@ module.exports = {
   ad_lq: d_lq,
   ad_geq: d_geq,
   ad_leq: d_leq,
+  ad_floor: d_floor,
   ad_sqrt: d_sqrt,
   ad_exp: d_exp,
   ad_log: d_log,
@@ -308,5 +309,22 @@ module.exports = {
   ad_derivativeF: derivativeF,
   ad_gradientF: gradientF,
   ad_derivativeR: derivativeR,
-  ad_gradientR: gradientR
+  ad_gradientR: gradientR,
+};
+
+// Also expose functions via the Math module
+// TODO: ceil, tan, hyperbolic trig fns, abs(?), min(?), max(?)
+var d_Math = {};
+for (var prop in Math) {
+  d_Math[rawname] = Math[prop];
 }
+d_Math.floor = d_floor;
+d_Math.sqrt = d_sqrt;
+d_Math.exp = d_exp;
+d_Math.pow = d_pow;
+d_Math.sin = d_sin;
+d_Math.cos = d_cos;
+d_Math.atan = d_atan;
+module.exports.Math = d_Math;
+
+

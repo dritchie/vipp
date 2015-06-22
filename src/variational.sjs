@@ -1,6 +1,3 @@
-import macros from './ad/macros'
-__initAD;
-
 'use strict';
 
 // TODO: In this and all other autodiff-ed files:

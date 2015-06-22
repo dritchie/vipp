@@ -1,6 +1,3 @@
-import macros from './ad/macros'
-__initAD;
-
 'use strict';
 
 var _ = require('underscore');

@@ -10,7 +10,8 @@
   "dependencies": {
     "numeric": "~1.2.6",
     "underscore": "^1.8.3",
-    "sweetify": "^0.4.0"
+    "sweet.js": "^0.7.1",
+    "brfs": "^1.4.0"
   },
   "bugs": {
     "url": "https://github.com/dritchie/vipp/issues"

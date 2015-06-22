@@ -1,54 +1,39 @@
 
 'use strict';
 
-var syscall = require('child_process').execSync;
-var fs = require('fs');
+
+var sweet = require('sweet.js');
 
 
-// This currently uses sweetify do to all the macro expansion
-// This won't work in the browwer.
-// TODO: Have a makefile-based compilation system that compiles
-//    erp, variational, etc. into one browser-loadable blob,
-//    then for the actual program code, use the raw sweet.js API
-//    to transform it (no filesystem access needed).
-var outfile = '_vipp_out.js'
-var supportFiles = [
-	'./src/variational.sjs',
-	'./src/erp.sjs',
-	'./src/util.sjs'
-];
-function executeFile(filename) {
-	// Call sweetify on this file and a bunch of supporting files
-	var cmd = 'browserify -t sweetify ';
-	for (var i = 0; i < supportFiles.length; i++)
-		cmd += supportFiles[i] + ' ';
-	cmd += filename + ' > ' + outfile;
-	syscall(cmd);
-
-	// Load that code and eval it.
-	var code = fs.readFileSync(outfile);
-	try {
-		return eval(code);
-	} finally {
-		// Clean up
-		syscall('rm -f ' + outfile);
-	}
-};
-
-var infile = '_vipp_in.sjs';
-function executeCode(code) {
-	// Save code to file, then call 'compile(filename)'
-	fs.writeFileSync(infile, code);
-	try {
-		return executeFile(infile);
-	} finally {
-		// Clean up
-		syscall('rm -f ' + infile);
+function compile(code) {
+	// AD and eval the code to get a callable thunk
+	var adcode = sweet.compile(code).code;
+	var wrappedcode = '(function() {\n' + adcode + '\n})\n';
+	var fn = eval(wrappedcode);
+	return function() {
+		// Install header + AD stuff into the global environment.
+		var oldG = {};
+		var ad = require('src/ad/functions');
+		for (var prop in ad) {
+			oldG[prop] = global[prop];
+			global[prop] = ad[prop];
+		}
+		var header = require('src/header');
+		for (var prop in header) {
+			oldG[prop] = global[prop];
+			global[prop] = header[prop];
+		}
+		// Run the code.
+		var ret = fn();
+		// Restore the global environment.
+		for (var prop in oldG)
+			global[prop] = oldG[prop];
+		// Return
+		return ret;
 	}
 }
 
 
 module.exports = {
-	executeCode: executeCode,
-	executeFile: executeFile
+	compile: compile
 };

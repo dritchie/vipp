@@ -16,29 +16,3 @@ operator ===  9 left { $l, $r } => #{ ad_peq($l, $r) }
 operator !==  9 left { $l, $r } => #{ ad_pneq($l, $r) }
 // needswork: modulo operation
 // needswork: binary and bitwise operations
-
-macro __initAD {
-  case {_} => {
-    return #{
-      (function () {
-        var ad = require('./ad/functions');
-        for (var prop in ad) {if (ad.hasOwnProperty(prop)) global[prop] = ad[prop];}
-      })()
-    }
-  }
-}
-
-export +
-export -
-export *
-export /
-export <
-export <=
-export >
-export >=
-export ==
-export !=
-export ===
-export !==
-
-export __initAD
