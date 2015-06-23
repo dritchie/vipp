@@ -17,10 +17,8 @@ operator !==  9 left { $l, $r } => #{ ad_pneq($l, $r) }
 // needswork: modulo operation
 // needswork: binary and bitwise operations
 
-// Also replace any reference to the Math library with a
-//    reference to the ad_Math library.
-// TODO: make this only happen for math functions for which
-//    we actually have an AD overload.
+
+// Replace references to Math.x with ad_Math.x
 macro Math {
 	rule { .$x } => { ad_Math.$x }
 }

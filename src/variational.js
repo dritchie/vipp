@@ -25,6 +25,7 @@ function run(guide, args, params) {
 // Returns the inferred variational params
 function infer(target, guide, args, opts) {
 	// Extract options
+	opts = opts || {};
 	function opt(val, defaultval) {
 		return val === undefined ? defaultval : val;
 	}
@@ -50,7 +51,7 @@ function infer(target, guide, args, opts) {
 			this.choices = [];
 			return this.rerun(thunk);
 		},
-		rerun: function() {
+		rerun: function(thunk) {
 			this.choiceIndex = 0;
 			this.score = 0;	
 			return thunk();
@@ -59,7 +60,7 @@ function infer(target, guide, args, opts) {
 
 	// Install coroutine
 	var oldCoroutine = coroutine;
-	coroutine = vo;
+	coroutine = vco;
 
 	var params = [];
 
@@ -68,7 +69,7 @@ function infer(target, guide, args, opts) {
 		return target(args);
 	}
 	var guideGrad = ad_gradientR(function(p) {
-		guide(args, p);
+		guide(p, args);
 		return vco.score;
 	})
 	var guideGradThunk = function() {

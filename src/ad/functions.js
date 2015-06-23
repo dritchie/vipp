@@ -176,30 +176,29 @@ var d_neq = overloader_2cmp(f_neq);
 var d_peq = overloader_2cmp(f_peq);
 var d_pneq = overloader_2cmp(f_pneq);
 var d_gt = overloader_2cmp(f_gt);
-var d_lq = overloader_2cmp(f_lt);
+var d_lt = overloader_2cmp(f_lt);
 var d_geq = overloader_2cmp(f_geq);
 var d_leq = overloader_2cmp(f_leq);
 
-var gMath = Math;
 
 var d_sqrt = function(x) {
-  return lift_real_to_real(gMath.sqrt, function(x){return d_div(1, d_mul(2.0, d_sqrt(x)))}, x)
+  return lift_real_to_real(Math.sqrt, function(x){return d_div(1, d_mul(2.0, d_sqrt(x)))}, x)
 };
 
 var d_exp = function(x) {
-  return lift_real_to_real(gMath.exp, function(x){return d_exp(x)}, x);
+  return lift_real_to_real(Math.exp, function(x){return d_exp(x)}, x);
 };
 
 var d_log = function(x) {
-  return lift_real_to_real(gMath.log, function(x){return d_div(1,x)}, x);
+  return lift_real_to_real(Math.log, function(x){return d_div(1,x)}, x);
 };
 
 var d_floor = function(x) {
-  return lift_real_to_real(gMath.floor, zeroF, x);
+  return lift_real_to_real(Math.floor, zeroF, x);
 };
 
 var d_pow = function(x1, x2) {
-  return lift_realreal_to_real(gMath.pow,
+  return lift_realreal_to_real(Math.pow,
                                function(x1, x2){return d_mul(x2, d_pow(x1, d_sub(x2, 1)));},
                                function(x1, x2){return d_mul(d_log(x1), d_pow(x1, x2));},
                                x1,
@@ -207,16 +206,16 @@ var d_pow = function(x1, x2) {
 };
 
 var d_sin = function(x) {
-  return lift_real_to_real(gMath.sin, function(x){return d_cos(x)}, x);
+  return lift_real_to_real(Math.sin, function(x){return d_cos(x)}, x);
 };
 
 var d_cos = function(x) {
-  return lift_real_to_real(gMath.cos, function(x){return d_sub(0, d_sin(x))}, x);
+  return lift_real_to_real(Math.cos, function(x){return d_sub(0, d_sin(x))}, x);
 };
 
 var d_atan = function(x1, x2) {
   x2 = x2 === undefined ? 1 : x2; // just atan, not atan2
-  return lift_realreal_to_real(gMath.atan2,
+  return lift_realreal_to_real(Math.atan2,
                                function(x1, x2){return d_div(x2, d_add(d_mul(x1,x1), d_mul(x2,x2)));},
                                function(x1, x2){return d_div(d_sub(0,x1), d_add(d_mul(x1,x1), d_mul(x2,x2)));},
                                x1,
@@ -297,7 +296,7 @@ module.exports = {
   ad_peq: d_peq,
   ad_pneq: d_pneq,
   ad_gt: d_gt,
-  ad_lq: d_lq,
+  ad_lt: d_lt,
   ad_geq: d_geq,
   ad_leq: d_leq,
   ad_floor: d_floor,
@@ -315,10 +314,12 @@ module.exports = {
 };
 
 // Also expose functions via the Math module
-// TODO: ceil, tan, hyperbolic trig fns, abs(?), min(?), max(?)
+// TODO: ceil, tan, hyperbolic trig fns, abs, min(?), max(?)
 var d_Math = {};
-for (var prop in gMath) {
-  d_Math[rawname] = gMath[prop];
+var mathProps = Object.getOwnPropertyNames(Math);
+for (var i = 0; i < mathProps.length; i++) {
+  var prop = mathProps[i];
+  d_Math[prop] = Math[prop];
 }
 d_Math.floor = d_floor;
 d_Math.sqrt = d_sqrt;
@@ -327,6 +328,7 @@ d_Math.pow = d_pow;
 d_Math.sin = d_sin;
 d_Math.cos = d_cos;
 d_Math.atan = d_atan;
+d_Math.atan2 = d_atan;
 module.exports.ad_Math = d_Math;
 
 

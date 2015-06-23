@@ -18,7 +18,7 @@ function main() {
 	// Run the thing
 	var code = fs.readFileSync(filename);
 	var fn = vipp.compile(code);
-	fn();
+	console.log(fn());
 }
 
 main();
