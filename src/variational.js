@@ -38,7 +38,7 @@ function infer(target, guide, args, opts) {
 	var vco = {
 		sample: function(erp, params) {
 			if (this.choiceIndex === this.choices.length) {
-				val = erp.sample(params);
+				var val = erp.sample(params);
 				this.score = ad_add(this.score, erp.score(params, val));
 				this.choices.push(val);
 			}
@@ -48,10 +48,12 @@ function infer(target, guide, args, opts) {
 			this.score = ad_add(this.score, num);
 		},
 		run: function(thunk) {
+			this.paramIndex = 0;
 			this.choices = [];
 			return this.rerun(thunk);
 		},
 		rerun: function(thunk) {
+			this.paramIndex = 0;
 			this.choiceIndex = 0;
 			this.score = 0;	
 			return thunk();
@@ -68,6 +70,9 @@ function infer(target, guide, args, opts) {
 	var targetThunk = function() {
 		return target(args);
 	}
+	var guideThunk = function() {
+		return guide(params, args);
+	}
 	var guideGrad = ad_gradientR(function(p) {
 		guide(p, args);
 		return vco.score;
@@ -80,6 +85,10 @@ function infer(target, guide, args, opts) {
 	var currStep = 0;
 	var runningG2 = null;
 	var maxDeltaAvg = 0;
+	// Run guide once to initialize vector of params
+	// TODO: This will not work if params has variable size--we'll need to
+	//    adopt a different strategy then.
+	vco.run(guideThunk);
 	do {
 		// Estimate learning signal with guide samples
 		var sumGrad = null;
