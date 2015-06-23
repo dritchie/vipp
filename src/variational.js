@@ -40,6 +40,10 @@ function infer(target, guide, args, opts) {
 		sample: function(erp, params) {
 			if (this.choiceIndex === this.choices.length) {
 				var val = erp.sample(params);
+				// (?) We don't store tapes in the trace, just raw numbers, so that
+				//    re-running with the target program works correctly.
+				// TODO: Better to feed primal params into sample, yeah?
+				val = (val.primal !== undefined) ? val.primal : val;
 				this.score = ad_add(this.score, erp.score(params, val));
 				this.choices.push(val);
 			}
@@ -104,6 +108,7 @@ function infer(target, guide, args, opts) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
 			var grad = vco.run(guideGradThunk);
+			// throw "early out";
 			var guideScore = vco.score.primal;
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
@@ -155,7 +160,7 @@ function infer(target, guide, args, opts) {
 	} while (!converged && currStep < nSteps);
 	if (verbosity > 0) {
 		if (converged)
-			console.log('CONVERGED (' + maxDeltaAvg + ' < ' + convergeEps + ')');
+			console.log('CONVERGED after step ' + currStep + ' (' + maxDeltaAvg + ' < ' + convergeEps + ')');
 		else
 			console.log('DID NOT CONVERGE (' + maxDeltaAvg + ' > ' + convergeEps + ')');
 	}
@@ -178,7 +183,9 @@ function factor(num) {
 function param(params, initialVal) {
 	if (coroutine.paramIndex == params.length)
 		params.push(initialVal);
-	return params[params.length-1];
+	var ret = params[coroutine.paramIndex];
+	coroutine.paramIndex++;
+	return ret;
 }
 
 // Create/lookup a param that has a prior

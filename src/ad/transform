@@ -2,18 +2,7 @@
 'use strict';
 
 var fs = require('fs');
-var sweet = require('sweet.js');
-
-
-var macroFilename = './src/ad/macros.js';
-function transform(filename) {
-	var macrosContents = fs.readFileSync(macroFilename);
-	var fileContents = fs.readFileSync(filename);
-	var fullContents = macrosContents + '\n' + fileContents;
-	var compiled = sweet.compile(fullContents);
-	console.log(compiled.code);
-}
-
+var adtransform = require('src/ad/transform.js').transform
 
 // AD-ify one file
 function main() {
@@ -23,7 +12,8 @@ function main() {
 		console.log('usage: transform filename');
 		return;
 	}
-	transform(filename);
+	var code = fs.readFileSync(filename);
+	console.log(adtransform(code));
 }
 
 main();

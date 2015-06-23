@@ -2,12 +2,12 @@
 'use strict';
 
 
-var sweet = require('sweet.js');
+var adtransform = require('src/ad/transform.js').transform;
 
 
 function compile(code) {
 	// AD and eval the code to get a callable thunk
-	var adcode = sweet.compile(code).code;
+	var adcode = adtransform(code);
 	var wrappedcode = '(function() {\n' + adcode + '\n})\n';
 	var fn = eval(wrappedcode);
 	return function() {
