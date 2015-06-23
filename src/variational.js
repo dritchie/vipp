@@ -1,9 +1,7 @@
 'use strict';
 
-// TODO: In this and all other autodiff-ed files:
-// Can the +=, -=, etc. operators be overloaded?
-//    If not, we must take care never to use these in
-//    autodiff-ed code...
+var numeric = require('numeric');
+
 
 var coroutine = {
 	paramIndex: 0,
@@ -32,7 +30,7 @@ function infer(target, guide, args, opts) {
 	}
 	var nSteps = opt(opts.nSteps, 100);
 	var nSamples = opt(opts.nSamples, 100);
-	var initLearnRate = opt(opts.initLearnRate, 1);
+	var learnRate = opt(opts.initLearnRate, 1);
 	var convergeEps = opt(opts.convergeEps, 0.1);
 
 	// Define the inference coroutine
@@ -80,15 +78,29 @@ function infer(target, guide, args, opts) {
 	// Do variational inference
 	var currStep = 0;
 	do {
+		// Estimate learning signal with guide samples
+		var sumSignal = null;
 		for (var s = 0; s < nSamples; s++) {
 			var grad = vco.run(guideGradThunk);
-			var guideScore = vco.score;
-			vo.rerun(targetThunk);
+			var guideScore = vco.score.primal;
+			vco.rerun(targetThunk);
 			var targetScore = vco.score;
-			// TODO: Finish this.
+			grad.muleq(targetScore - guideScore);
+			if (sumSignal === null)
+				sumSignal = grad;
+			else
+				sumSignal.addeq(signal);
 		}
+		// Take gradient step
+		sumSignal.muleq(learnRate/nSamples);
+		params.addeq(sumSignal);
+		// Check for convergence
+		var maxdelta = 0;
+		for (var i = 0; i < sumSignal.length; i++)
+			maxdelta = Math.max(Math.abs(sumSignal[i]), maxdelta);
+		var converged = maxdelta < convergeEps;
 		currStep++;
-	} while (convergeMeasure > convergeEps && currStep < nSteps);
+	} while (!converged && currStep < nSteps);
 
 	// Restore original coroutine
 	oldCoroutine = oldCoroutine;
