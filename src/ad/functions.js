@@ -327,7 +327,6 @@ d_Math.pow = d_pow;
 d_Math.sin = d_sin;
 d_Math.cos = d_cos;
 d_Math.atan = d_atan;
-module.exports.Math = d_Math; // little bit uncomfortable with this...
-// module.exports.math = d_Math;
+module.exports.ad_Math = d_Math;
 
 
