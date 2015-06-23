@@ -157,7 +157,7 @@ function infer(target, guide, args, opts) {
 		if (converged)
 			console.log('CONVERGED (' + maxDeltaAvg + ' < ' + convergeEps + ')');
 		else
-			console.log('DID NOT CONVERGE');
+			console.log('DID NOT CONVERGE (' + maxDeltaAvg + ' > ' + convergeEps + ')');
 	}
 
 	// Restore original coroutine
