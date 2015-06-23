@@ -77,28 +77,52 @@ function infer(target, guide, args, opts) {
 
 	// Do variational inference
 	var currStep = 0;
+	var runningG2 = null;
+	var maxDeltaAvg = 0;
 	do {
 		// Estimate learning signal with guide samples
-		var sumSignal = null;
+		var sumGrad = null;
+		var sumGradSq = null;
+		var sumWeightedGrad = null;
+		var sumWeightedGradSq = null;
 		for (var s = 0; s < nSamples; s++) {
 			var grad = vco.run(guideGradThunk);
 			var guideScore = vco.score.primal;
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
-			grad.muleq(targetScore - guideScore);
-			if (sumSignal === null)
-				sumSignal = grad;
-			else
-				sumSignal.addeq(signal);
+			var weightedGrad = numeric.mul(grad, targetScore - guideScore);
+			if (sumGrad === null) {
+				sumGrad = numeric.rep([grad.length], 0);
+				sumGradSq = numeric.rep([grad.length], 0);
+				sumWeightedGrad = numeric.rep([grad.length], 0);
+				sumWeightedGradSq = numeric.rep([grad.length], 0);
+			}
+			numeric.addeq(sumGrad, grad);
+			numeric.addeq(sumWeightedGrad, weightedGrad);
+			numeric.poweq(grad, 2);
+			numeric.poweq(weightedGrad, 2);
+			numeric.addeq(sumGradSq, grad);
+			numeric.addeq(sumWeightedGradSq, weightedGrad);
 		}
-		// Take gradient step
-		sumSignal.muleq(learnRate/nSamples);
-		params.addeq(sumSignal);
+		// Compute AdaGrad learning rate and control variate,
+		//    then do parameter update
+		var aStar = numeric.div(sumWeightedGradSq, sumGradSq);
+		numeric.muleq(aStar, sumGrad);
+		var elboGradEst = numeric.sub(sumWeightedGrad, aStar);
+		numeric.diveq(elboGradEst, nSamples);
+		if (runningG2 === null) runningG2 = numeric.rep([params.length], 0);
+		var maxDelta = 0;
+		for (var i = 0; i < params.length; i++) {
+			var grad = elboGradEst[i];
+			runningG2[i] += grad*grad;
+			var weight = learnRate / Math.sqrt(runningG2[i]);
+			var delta = weight * grad;
+			params[i] += delta;
+			maxDelta = Math.max(Math.abs(delta), maxDelta);
+		}
 		// Check for convergence
-		var maxdelta = 0;
-		for (var i = 0; i < sumSignal.length; i++)
-			maxdelta = Math.max(Math.abs(sumSignal[i]), maxdelta);
-		var converged = maxdelta < convergeEps;
+		maxDeltaAvg = maxDeltaAvg * 0.9 + maxDelta;
+		var converged = maxDeltaAvg < convergeEps;
 		currStep++;
 	} while (!converged && currStep < nSteps);
 
