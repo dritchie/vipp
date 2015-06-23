@@ -107,11 +107,13 @@ function infer(target, guide, args, opts) {
 			var guideScore = vco.score.primal;
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
-			if (verbosity > 4) {
-				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore);
-				console.log('    grad: ' + grad.toString());
-			}
 			var weightedGrad = numeric.mul(grad, targetScore - guideScore);
+			if (verbosity > 4) {
+				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
+					+ ', diff: ' + (targetScore - guideScore));
+				console.log('    grad: ' + grad.toString());
+				console.log('    weightedGrad: ' + weightedGrad.toString());
+			}
 			if (sumGrad === null) {
 				sumGrad = numeric.rep([grad.length], 0);
 				sumGradSq = numeric.rep([grad.length], 0);
