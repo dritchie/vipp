@@ -324,6 +324,7 @@ for (var i = 0; i < mathProps.length; i++) {
 d_Math.floor = d_floor;
 d_Math.sqrt = d_sqrt;
 d_Math.exp = d_exp;
+d_Math.log = d_log;
 d_Math.pow = d_pow;
 d_Math.sin = d_sin;
 d_Math.cos = d_cos;

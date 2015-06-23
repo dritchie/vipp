@@ -33,6 +33,7 @@ function infer(target, guide, args, opts) {
 	var nSamples = opt(opts.nSamples, 100);
 	var learnRate = opt(opts.initLearnRate, 1);
 	var convergeEps = opt(opts.convergeEps, 0.1);
+	var verbosity = opt(opts.verbosity, 0);
 
 	// Define the inference coroutine
 	var vco = {
@@ -90,16 +91,26 @@ function infer(target, guide, args, opts) {
 	//    adopt a different strategy then.
 	vco.run(guideThunk);
 	do {
+		if (verbosity > 0)
+			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
+		if (verbosity > 1)
+			console.log('  params: ' + params.toString());
 		// Estimate learning signal with guide samples
 		var sumGrad = null;
 		var sumGradSq = null;
 		var sumWeightedGrad = null;
 		var sumWeightedGradSq = null;
 		for (var s = 0; s < nSamples; s++) {
+			if (verbosity > 2)
+				console.log('  Sample ' + s + '/' + nSamples);
 			var grad = vco.run(guideGradThunk);
 			var guideScore = vco.score.primal;
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
+			if (verbosity > 3) {
+				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore);
+				console.log('    grad: ' + grad.toString());
+			}
 			var weightedGrad = numeric.mul(grad, targetScore - guideScore);
 			if (sumGrad === null) {
 				sumGrad = numeric.rep([grad.length], 0);
@@ -135,6 +146,12 @@ function infer(target, guide, args, opts) {
 		var converged = maxDeltaAvg < convergeEps;
 		currStep++;
 	} while (!converged && currStep < nSteps);
+	if (verbosity > 0) {
+		if (converged)
+			console.log('CONVERGED (' + maxDeltaAvg + ' < ' + convergeEps + ')');
+		else
+			console.log('DID NOT CONVERGE');
+	}
 
 	// Restore original coroutine
 	oldCoroutine = oldCoroutine;
