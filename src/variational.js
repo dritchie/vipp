@@ -91,9 +91,9 @@ function infer(target, guide, args, opts) {
 	//    adopt a different strategy then.
 	vco.run(guideThunk);
 	do {
-		if (verbosity > 0)
-			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
 		if (verbosity > 1)
+			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
+		if (verbosity > 2)
 			console.log('  params: ' + params.toString());
 		// Estimate learning signal with guide samples
 		var sumGrad = null;
@@ -101,13 +101,13 @@ function infer(target, guide, args, opts) {
 		var sumWeightedGrad = null;
 		var sumWeightedGradSq = null;
 		for (var s = 0; s < nSamples; s++) {
-			if (verbosity > 2)
+			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
 			var grad = vco.run(guideGradThunk);
 			var guideScore = vco.score.primal;
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
-			if (verbosity > 3) {
+			if (verbosity > 4) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore);
 				console.log('    grad: ' + grad.toString());
 			}
@@ -131,6 +131,11 @@ function infer(target, guide, args, opts) {
 		numeric.muleq(aStar, sumGrad);
 		var elboGradEst = numeric.sub(sumWeightedGrad, aStar);
 		numeric.diveq(elboGradEst, nSamples);
+		if (verbosity > 2) {
+			console.log('  elboGradEst: ' +  elboGradEst.toString());
+			console.log('  sumGrad: ' +  sumGrad.toString());
+			console.log('  sumWeightedGrad: ' +  sumWeightedGrad.toString());
+		}
 		if (runningG2 === null) runningG2 = numeric.rep([params.length], 0);
 		var maxDelta = 0;
 		for (var i = 0; i < params.length; i++) {
