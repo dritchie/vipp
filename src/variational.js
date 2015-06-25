@@ -120,7 +120,8 @@ function infer(target, guide, args, opts) {
 			var guideScore = vco.score.primal;
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
-			var weightedGrad = numeric.mul(grad, targetScore - guideScore);
+			var scoreDiff = targetScore - guideScore;
+			var weightedGrad = numeric.mul(grad, scoreDiff);
 			if (verbosity > 4) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
 					+ ', diff: ' + (targetScore - guideScore));
@@ -130,10 +131,10 @@ function infer(target, guide, args, opts) {
 			// throw "early out";
 			numeric.addeq(sumGrad, grad);
 			numeric.addeq(sumWeightedGrad, weightedGrad);
-			numeric.poweq(grad, 2);
-			numeric.poweq(weightedGrad, 2);
+			numeric.poweq(grad, 2);	// grad is now gradSq
 			numeric.addeq(sumGradSq, grad);
-			numeric.addeq(sumWeightedGradSq, weightedGrad);
+			var weightedGradSq = numeric.mul(grad, scoreDiff)
+			numeric.addeq(sumWeightedGradSq, weightedGradSq);
 		}
 		// Compute AdaGrad learning rate and control variate,
 		//    then do parameter update
