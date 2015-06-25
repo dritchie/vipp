@@ -3,6 +3,13 @@
 var numeric = require('numeric');
 
 
+// Get the primal value of a dual number/tape
+function primal(x) {
+	return x.primal === undefined ? x : x.primal;
+}
+
+
+// Global inference coroutine
 var coroutine = {
 	paramIndex: 0,
 	sample: function(erp, params) {
@@ -108,7 +115,6 @@ function infer(target, guide, args, opts) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
 			var grad = vco.run(guideGradThunk);
-			// throw "early out";
 			var guideScore = vco.score.primal;
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
@@ -119,6 +125,7 @@ function infer(target, guide, args, opts) {
 				console.log('    grad: ' + grad.toString());
 				console.log('    weightedGrad: ' + weightedGrad.toString());
 			}
+			// throw "early out";
 			if (sumGrad === null) {
 				sumGrad = numeric.rep([grad.length], 0);
 				sumGradSq = numeric.rep([grad.length], 0);
@@ -139,9 +146,9 @@ function infer(target, guide, args, opts) {
 		var elboGradEst = numeric.sub(sumWeightedGrad, aStar);
 		numeric.diveq(elboGradEst, nSamples);
 		if (verbosity > 2) {
-			console.log('  elboGradEst: ' +  elboGradEst.toString());
 			console.log('  sumGrad: ' +  sumGrad.toString());
 			console.log('  sumWeightedGrad: ' +  sumWeightedGrad.toString());
+			console.log('  elboGradEst: ' +  elboGradEst.toString());
 		}
 		if (runningG2 === null) runningG2 = numeric.rep([params.length], 0);
 		var maxDelta = 0;
@@ -182,7 +189,7 @@ function factor(num) {
 // Create/lookup a param
 function param(params, initialVal) {
 	if (coroutine.paramIndex == params.length)
-		params.push(initialVal);
+		params.push(primal(initialVal));
 	var ret = params[coroutine.paramIndex];
 	coroutine.paramIndex++;
 	return ret;
