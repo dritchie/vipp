@@ -94,24 +94,25 @@ function infer(target, guide, args, opts) {
 		return guideGrad(params);
 	}
 
-	// Do variational inference
-	var currStep = 0;
-	var runningG2 = null;
-	var maxDeltaAvg = 0;
+	
 	// Run guide once to initialize vector of params
 	// TODO: This will not work if params has variable size--we'll need to
 	//    adopt a different strategy then.
 	vco.run(guideThunk);
+	// Do variational inference
+	var currStep = 0;
+	var maxDeltaAvg = 0;
+	var runningG2 = numeric.rep([params.length], 0);
 	do {
 		if (verbosity > 1)
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
 		if (verbosity > 2)
 			console.log('  params: ' + params.toString());
 		// Estimate learning signal with guide samples
-		var sumGrad = null;
-		var sumGradSq = null;
-		var sumWeightedGrad = null;
-		var sumWeightedGradSq = null;
+		var sumGrad = numeric.rep([params.length], 0);
+		var sumGradSq = numeric.rep([params.length], 0);
+		var sumWeightedGrad = numeric.rep([params.length], 0);
+		var sumWeightedGradSq = numeric.rep([params.length], 0);
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
@@ -127,12 +128,6 @@ function infer(target, guide, args, opts) {
 				console.log('    weightedGrad: ' + weightedGrad.toString());
 			}
 			// throw "early out";
-			if (sumGrad === null) {
-				sumGrad = numeric.rep([grad.length], 0);
-				sumGradSq = numeric.rep([grad.length], 0);
-				sumWeightedGrad = numeric.rep([grad.length], 0);
-				sumWeightedGradSq = numeric.rep([grad.length], 0);
-			}
 			numeric.addeq(sumGrad, grad);
 			numeric.addeq(sumWeightedGrad, weightedGrad);
 			numeric.poweq(grad, 2);
@@ -153,7 +148,6 @@ function infer(target, guide, args, opts) {
 		}
 		// if (currStep == 1)
 		// 	throw "early out";
-		if (runningG2 === null) runningG2 = numeric.rep([params.length], 0);
 		var maxDelta = 0;
 		for (var i = 0; i < params.length; i++) {
 			var grad = elboGradEst[i];
