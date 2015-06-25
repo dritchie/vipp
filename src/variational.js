@@ -45,16 +45,17 @@ function infer(target, guide, args, opts) {
 	// Define the inference coroutine
 	var vco = {
 		sample: function(erp, params) {
-			if (this.choiceIndex === this.choices.length) {
-				var val = erp.sample(params);
-				// (?) We don't store tapes in the trace, just raw numbers, so that
+			var val = this.choices[this.choices.length-1];
+			if (val === undefined) {
+				// We don't store tapes in the trace, just raw numbers, so that
 				//    re-running with the target program works correctly.
-				// TODO: Better to feed primal params into sample, yeah?
-				val = (val.primal !== undefined) ? val.primal : val;
-				this.score = ad_add(this.score, erp.score(params, val));
+				var pparams = params.map(function(x) { return primal(x); });
+				val = erp.sample(pparams);
 				this.choices.push(val);
 			}
-			return this.choices[this.choices.length-1];
+			// console.log(params.map(function(x) { return primal(x); }), primal(val), primal(erp.score(params, val)));
+			this.score = ad_add(this.score, erp.score(params, val));
+			return val;
 		},
 		factor: function(num) {
 			this.score = ad_add(this.score, num);
@@ -150,6 +151,8 @@ function infer(target, guide, args, opts) {
 			console.log('  sumWeightedGrad: ' +  sumWeightedGrad.toString());
 			console.log('  elboGradEst: ' +  elboGradEst.toString());
 		}
+		// if (currStep == 1)
+		// 	throw "early out";
 		if (runningG2 === null) runningG2 = numeric.rep([params.length], 0);
 		var maxDelta = 0;
 		for (var i = 0; i < params.length; i++) {
@@ -183,7 +186,7 @@ function sample(erp, params) {
 }
 
 function factor(num) {
-	return coroutine.factor(num);
+	coroutine.factor(num);
 }
 
 // Create/lookup a param
