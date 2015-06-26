@@ -181,11 +181,11 @@ var gammaCof = [
 function logGamma(xx) {
   var x = xx - 1.0;
   var tmp = x + 5.5;
-  tmp = tmp - (x + 0.5) * Math.log(tmp);
+  tmp = tmp - ((x + 0.5) * Math.log(tmp));
   var ser = 1.000000000190015;
   for (var j = 0; j <= 5; j++) {
     x = x + 1;
-    ser = ser + gammaCof[j] / x;
+    ser = ser + (gammaCof[j] / x);
   }
   return -tmp + Math.log(2.5066282746310005 * ser);
 }
@@ -201,7 +201,7 @@ function digamma(x) {
     var n = Math.ceil(6 - x);
     var psi = digamma(x + n);
     for (var i = 0; i < n; i++) {
-      psi = psi - 1 / (x + i);
+      psi = psi - (1 / (x + i));
     }
     return psi;
   } else {
@@ -210,7 +210,7 @@ function digamma(x) {
     var z = 1;
     for (var i = 0; i < digammaCof.length; i++) {
       z = z * invsq;
-      psi = psi + digammaCof[i] * z;
+      psi = psi + (digammaCof[i] * z);
     }
     return psi;
   }
@@ -389,7 +389,7 @@ var binomialERP = new ERP(
 function fact(x) {
   var t = 1;
   while (x > 1) {
-    t = t * x--;
+    t = t * (x--);
   }
   return t;
 }
@@ -467,7 +467,7 @@ function dirichletScore(params, val) {
   }
   var logp = logGamma(asum);
   for (var j = 0; j < alpha.length; j++) {
-    logp = logp + (alpha[j] - 1) * Math.log(theta[j]);
+    logp = logp + ((alpha[j] - 1) * Math.log(theta[j]));
     logp = logp - logGamma(alpha[j]);
   }
   return logp;

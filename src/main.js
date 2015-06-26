@@ -9,6 +9,9 @@ function compile(code) {
 	// AD and eval the code to get a callable thunk
 	var adcode = adtransform(code);
 	var wrappedcode = '(function() {\n' + adcode + '\n})\n';
+	// // TEST: no AD
+	// var wrappedcode = '(function() {\n' + code + '\n})\n';
+	// //
 	var fn = eval(wrappedcode);
 	return function() {
 		// Install header + AD stuff into the global environment.

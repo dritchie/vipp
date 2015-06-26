@@ -1,6 +1,9 @@
 'use strict';
 
 var erp = require('src/erp.js');
+// // TEST: no AD
+// var erp = require('src/erp.sjs');
+// //
 var variational = require('src/variational.js');
 
 module.exports = {};
@@ -13,15 +16,15 @@ for (var prop in variational)
 
 // Common ERPs
 var flip = function(theta) {
-  return sample(bernoulliERP, [theta]);
+  return sample(erp.bernoulliERP, [theta]);
 };
 
 var randomInteger = function(n) {
-  return sample(randomIntegerERP, [n]);
+  return sample(erp.randomIntegerERP, [n]);
 };
 
 var discrete = function(n) {
-  return sample(discreteERP, [n]);
+  return sample(erp.discreteERP, [n]);
 };
 
 var categorical = function(ps, vs) {
@@ -29,7 +32,7 @@ var categorical = function(ps, vs) {
 }
 
 var gaussian = function(mu, sigma) {
-  return sample(gaussianERP, [mu, sigma]);
+  return sample(erp.gaussianERP, [mu, sigma]);
 };
 
 // var multivariateGaussian = function(mu, cov) {
@@ -37,43 +40,43 @@ var gaussian = function(mu, sigma) {
 // };
 
 var uniform = function(a, b) {
-  return sample(uniformERP, [a, b]);
+  return sample(erp.uniformERP, [a, b]);
 };
 
 var uniformDraw = function(l) {
-  return l[sample(randomIntegerERP, [l.length])];
+  return l[sample(erp.randomIntegerERP, [l.length])];
 };
 
 var dirichlet = function(alpha) {
-  return sample(dirichletERP, alpha);
+  return sample(erp.dirichletERP, alpha);
 };
 
 var poisson = function(mu, k) {
-  return sample(poissonERP, [mu, k]);
+  return sample(erp.poissonERP, [mu, k]);
 };
 
 var binomial = function(p, n) {
-  return sample(binomialERP, [p, n]);
+  return sample(erp.binomialERP, [p, n]);
 };
 
 var beta = function(a, b) {
-  return sample(betaERP, [a, b]);
+  return sample(erp.betaERP, [a, b]);
 };
 
 var exponential = function(a) {
-  return sample(exponentialERP, [a]);
+  return sample(erp.exponentialERP, [a]);
 };
 
 var gamma = function(shape, scale) {
-  return sample(gammaERP, [shape, scale]);
+  return sample(erp.gammaERP, [shape, scale]);
 };
 
 // var deltaERP = function(v) {
-//   return top.makeDeltaERP(v);
+//   return erp.makeDeltaERP(v);
 // }
 
 // var multiplexERP = function(vs, erps) {
-//   return top.makeMultiplexERP(vs, erps);
+//   return erp.makeMultiplexERP(vs, erps);
 // }
 
 module.exports.flip = flip;

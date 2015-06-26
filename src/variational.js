@@ -38,14 +38,14 @@ function infer(target, guide, args, opts) {
 	}
 	var nSteps = opt(opts.nSteps, 100);
 	var nSamples = opt(opts.nSamples, 100);
-	var learnRate = opt(opts.initLearnRate, 1);
+	var learnRate = opt(opts.initLearnRate, 0.5);
 	var convergeEps = opt(opts.convergeEps, 0.1);
 	var verbosity = opt(opts.verbosity, 0);
 
 	// Define the inference coroutine
 	var vco = {
 		sample: function(erp, params) {
-			var val = this.choices[this.choices.length-1];
+			var val = this.choices[this.choiceIndex];
 			if (val === undefined) {
 				// We don't store tapes in the trace, just raw numbers, so that
 				//    re-running with the target program works correctly.
@@ -53,19 +53,25 @@ function infer(target, guide, args, opts) {
 				val = erp.sample(pparams);
 				this.choices.push(val);
 			}
-			// console.log(params.map(function(x) { return primal(x); }), primal(val), primal(erp.score(params, val)));
 			this.score = ad_add(this.score, erp.score(params, val));
+			// // TEST: no AD
+			// var localgrad = erp.grad(params, val);
+			// for (var i = 0; i < localgrad.length; i++) this.grad.push(localgrad[i]);
+			// //
+			this.choiceIndex++;
 			return val;
 		},
 		factor: function(num) {
 			this.score = ad_add(this.score, num);
 		},
 		run: function(thunk) {
-			this.paramIndex = 0;
 			this.choices = [];
 			return this.rerun(thunk);
 		},
 		rerun: function(thunk) {
+			// // TEST
+			// this.grad = [];
+			// //
 			this.paramIndex = 0;
 			this.choiceIndex = 0;
 			this.score = 0;	
@@ -117,18 +123,21 @@ function infer(target, guide, args, opts) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
 			var grad = vco.run(guideGradThunk);
-			var guideScore = vco.score.primal;
+			// // TEST: no AD
+			// vco.run(guideThunk);
+			// var grad = vco.grad;
+			// //
+			var guideScore = primal(vco.score);
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
 			var scoreDiff = targetScore - guideScore;
 			var weightedGrad = numeric.mul(grad, scoreDiff);
 			if (verbosity > 4) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
-					+ ', diff: ' + (targetScore - guideScore));
+					+ ', diff: ' + scoreDiff);
 				console.log('    grad: ' + grad.toString());
 				console.log('    weightedGrad: ' + weightedGrad.toString());
 			}
-			// throw "early out";
 			numeric.addeq(sumGrad, grad);
 			numeric.addeq(sumWeightedGrad, weightedGrad);
 			numeric.poweq(grad, 2);	// grad is now gradSq
@@ -141,17 +150,14 @@ function infer(target, guide, args, opts) {
 		var aStar = numeric.div(sumWeightedGradSq, sumGradSq);
 		numeric.muleq(aStar, sumGrad);
 		var elboGradEst = numeric.sub(sumWeightedGrad, aStar);
-		numeric.diveq(elboGradEst, nSamples);
 		if (verbosity > 2) {
 			console.log('  sumGrad: ' +  sumGrad.toString());
 			console.log('  sumWeightedGrad: ' +  sumWeightedGrad.toString());
 			console.log('  elboGradEst: ' +  elboGradEst.toString());
 		}
-		// if (currStep == 1)
-		// 	throw "early out";
 		var maxDelta = 0;
 		for (var i = 0; i < params.length; i++) {
-			var grad = elboGradEst[i];
+			var grad = elboGradEst[i] / nSamples;
 			runningG2[i] += grad*grad;
 			var weight = learnRate / Math.sqrt(runningG2[i]);
 			var delta = weight * grad;
