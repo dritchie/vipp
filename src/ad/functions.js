@@ -4,7 +4,9 @@ var S_dualNumber = function(epsilon, primal, perturbation) {
   this.epsilon = epsilon;
   this.primal = primal;
   this.perturbation = perturbation;
-}
+};
+var isDualNumber = function(dn) { return dn instanceof S_dualNumber };
+
 var S_tape = function(epsilon, primal, factors, tapes, fanout, sensitivity) {
   this.epsilon = epsilon;
   this.primal = primal;
@@ -12,18 +14,9 @@ var S_tape = function(epsilon, primal, factors, tapes, fanout, sensitivity) {
   this.tapes = tapes;
   this.fanout = fanout;
   this.sensitivity = sensitivity;
-}
-
-var makeDualNumber = function(epsilon, primal, perturbation) {
-  return new S_dualNumber(epsilon, primal, perturbation);
-};
-var isDualNumber = function(dn) { return dn instanceof S_dualNumber };
-
-var makeTape = function(epsilon, primal, factors, tapes, fanout, sensitivity) {
-  return new S_tape(epsilon, primal, factors, tapes, fanout, sensitivity);
 };
 var tape = function(e, primal, factors, tapes) {
-  return makeTape(e, primal, factors, tapes, 0, 0.0);
+  return new S_tape(e, primal, factors, tapes, 0, 0.0);
 };
 var isTape = function(t) { return t instanceof S_tape; };
 
@@ -43,7 +36,7 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
                       [x_1, x_2])
       else if (isDualNumber(x_2))
         if (x_1.epsilon < x_2.epsilon)
-          return makeDualNumber(x_2.epsilon,
+          return new S_dualNumber(x_2.epsilon,
                                 fn(x_1, x_2.primal),
                                 d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
         else
@@ -54,15 +47,15 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
     else if (isDualNumber(x_1)) {
       if (isDualNumber(x_2))
         if (x_1.epsilon < x_2.epsilon)
-          return makeDualNumber(x_2.epsilon,
+          return new S_dualNumber(x_2.epsilon,
                                 fn(x_1, x_2.primal),
                                 d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
         else if (x_2.epsilon < x_1.epsilon)
-          return makeDualNumber(x_1.epsilon,
+          return new S_dualNumber(x_1.epsilon,
                                 fn(x_1.primal, x_2),
                                 d_mul(df_dx1(x_1.primal, x_2), x_1.perturbation))
         else
-          return makeDualNumber(x_1.epsilon,
+          return new S_dualNumber(x_1.epsilon,
                                 fn(x_1.primal, x_2.primal),
                                 d_add(d_mul(df_dx1(x_1.primal, x_2.primal), x_1.perturbation),
                                       d_mul(df_dx2(x_1.primal, x_2.primal), x_2.perturbation)))
@@ -70,11 +63,11 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
         if (x_1.epsilon < x_2.epsilon)
           return tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
         else
-          return makeDualNumber(x_1.epsilon,
+          return new S_dualNumber(x_1.epsilon,
                                 fn(x_1.primal, x_2),
                                 d_mul(df_dx1(x_1.primal, x_2), x_1.perturbation))
       else
-        return makeDualNumber(x_1.epsilon,
+        return new S_dualNumber(x_1.epsilon,
                               fn(x_1.primal, x_2),
                               d_mul(df_dx1(x_1.primal, x_2), x_1.perturbation))
     }
@@ -82,7 +75,7 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
       if (isTape(x_2))
         return tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
       else if (isDualNumber(x_2))
-        return makeDualNumber(x_2.epsilon,
+        return new S_dualNumber(x_2.epsilon,
                               fn(x_1, x_2.primal),
                               d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
       else
@@ -97,7 +90,7 @@ var lift_real_to_real = function(f, df_dx, x) {
     if (isTape(x1))
       return tape(x1.epsilon, fn(x1.primal), [df_dx(x1.primal)], [x1]);
     else if (isDualNumber(x1))
-      return makeDualNumber(x1.epsilon, fn(x1.primal), d_mul(df_dx(x1.primal), x1.perturbation));
+      return new S_dualNumber(x1.epsilon, fn(x1.primal), d_mul(df_dx(x1.primal), x1.perturbation));
     else
       return f(x1);
   }
@@ -234,7 +227,7 @@ var lt_e = function(e1, e2) { return e1 < e2 }
 var derivativeF = function(f) {
   return function(x) {
     _e_ += 1;
-    var y = f(makeDualNumber(_e_, x, 1.0));
+    var y = f(new S_dualNumber(_e_, x, 1.0));
     var y_prime = (!isDualNumber(y) || lt_e(y.epsilon, _e_)) ? 0.0 : y.perturbation;
     _e_ -= 1;
     return y_prime;
