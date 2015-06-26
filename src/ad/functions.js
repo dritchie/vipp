@@ -247,7 +247,10 @@ var gradientF = function(f) {
 
 var determineFanout = function(tape) {
   tape.fanout += 1;
-  if (tape.fanout == 1) { tape.tapes.forEach(determineFanout) }
+  if (tape.fanout == 1) {
+    var n = tape.tapes.length;
+    while (n--) determineFanout(tape.tapes[n]);
+  }
 }
 
 var reversePhase = function(sensitivity, tape) {
@@ -255,9 +258,8 @@ var reversePhase = function(sensitivity, tape) {
   tape.fanout -= 1;
   if (tape.fanout == 0) {
     var sens = tape.sensitivity;
-    for (var i = 0; i < tape.factors.length; i++) {
-      reversePhase(d_mul(sens, tape.factors[i]), tape.tapes[i]);
-    }
+    var n = tape.factors.length;
+    while (n--) reversePhase(d_mul(sens, tape.factors[n]), tape.tapes[n]);
   }
 }
 
