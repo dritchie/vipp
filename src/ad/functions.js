@@ -135,18 +135,18 @@ var overloader_2op = function(baseF, lifter1, lifter2) {
 };
 // this might need primal* if cmp operators are used with &rest
 var overloader_2cmp = function(baseF) {
+  var fn = function(x1, x2) {
+      if (isDualNumber(x1) || isTape(x1))
+        return fn(x1.primal, x2);
+      else if (isDualNumber(x2) || isTape(x2))
+        return fn(x1, x2.primal);
+      else
+        return baseF(x1, x2);
+    }
   return function(x1, x2) {
     if (isNumeric(x1) && isNumeric(x2))
       return baseF(x1, x2);
     else {
-      var fn = function(x1, x2) {
-        if (isDualNumber(x1) || isTape(x1))
-          return fn(x1.primal, x2);
-        else if (isDualNumber(x2) || isTape(x2))
-          return fn(x1, x2.primal);
-        else
-          return baseF(x1, x2);
-      }
       return fn(x1, x2);
     }
   };
