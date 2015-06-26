@@ -1,10 +1,10 @@
 'use strict';
 
-var erp = require('src/erp.js');
+var erp = require('./erp.js');
 // // TEST: no AD
 // var erp = require('src/erp.sjs');
 // //
-var variational = require('src/variational.js');
+var variational = require('./variational.js');
 
 module.exports = {};
 

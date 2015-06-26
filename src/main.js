@@ -2,7 +2,7 @@
 'use strict';
 
 
-var adtransform = require('src/ad/transform.js').transform;
+var adtransform = require('./ad/transform.js').transform;
 
 
 function compile(code) {
@@ -16,12 +16,12 @@ function compile(code) {
 	return function() {
 		// Install header + AD stuff into the global environment.
 		var oldG = {};
-		var ad = require('src/ad/functions');
+		var ad = require('./ad/functions');
 		for (var prop in ad) {
 			oldG[prop] = global[prop];
 			global[prop] = ad[prop];
 		}
-		var header = require('src/header');
+		var header = require('./header');
 		for (var prop in header) {
 			oldG[prop] = global[prop];
 			global[prop] = header[prop];

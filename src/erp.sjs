@@ -24,7 +24,7 @@
 // var numeric = require('numeric');
 var _ = require('underscore');
 var assert = require('assert');
-var util = require('src/util.js');
+var util = require('./util.js');
 
 var LOG_2PI = 1.8378770664093453;
 
