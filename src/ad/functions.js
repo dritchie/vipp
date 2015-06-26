@@ -17,7 +17,7 @@ var S_tape = function(epsilon, primal, factors, tapes, fanout, sensitivity) {
 var makeDualNumber = function(epsilon, primal, perturbation) {
   return new S_dualNumber(epsilon, primal, perturbation);
 };
-var isDualNumber = function(dn) { return dn.hasOwnProperty('perturbation'); };
+var isDualNumber = function(dn) { return dn instanceof S_dualNumber };
 
 var makeTape = function(epsilon, primal, factors, tapes, fanout, sensitivity) {
   return new S_tape(epsilon, primal, factors, tapes, fanout, sensitivity);
@@ -25,7 +25,7 @@ var makeTape = function(epsilon, primal, factors, tapes, fanout, sensitivity) {
 var tape = function(e, primal, factors, tapes) {
   return makeTape(e, primal, factors, tapes, 0, 0.0);
 };
-var isTape = function(t) { return t.hasOwnProperty('fanout'); };
+var isTape = function(t) { return t instanceof S_tape; };
 
 // needswork: check if all operators used here are primitive or lifted
 var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
