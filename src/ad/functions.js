@@ -306,6 +306,8 @@ module.exports = {
   ad_gradientF: gradientF,
   ad_derivativeR: derivativeR,
   ad_gradientR: gradientR,
+  // For testing purposes only
+  tape: S_tape
 };
 
 // Also expose functions via the Math module
