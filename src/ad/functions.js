@@ -1,17 +1,18 @@
 "use strict";
 
-// http://stackoverflow.com/questions/502366/structs-in-javascript
-function makeStruct() {
-  var args = arguments;
-  function constructor() {
-    for (var i = 0; i < args.length; i++)
-      this[args[i]] = arguments[i];
-  }
-  return constructor;
+var S_dualNumber = function(epsilon, primal, perturbation) {
+  this.epsilon = epsilon;
+  this.primal = primal;
+  this.perturbation = perturbation;
 }
-
-var S_dualNumber = makeStruct('epsilon', 'primal', 'perturbation');
-var S_tape = makeStruct('epsilon', 'primal', 'factors', 'tapes', 'fanout', 'sensitivity');
+var S_tape = function(epsilon, primal, factors, tapes, fanout, sensitivity) {
+  this.epsilon = epsilon;
+  this.primal = primal;
+  this.factors = factors;
+  this.tapes = tapes;
+  this.fanout = fanout;
+  this.sensitivity = sensitivity;
+}
 
 var makeDualNumber = function(epsilon, primal, perturbation) {
   return new S_dualNumber(epsilon, primal, perturbation);
