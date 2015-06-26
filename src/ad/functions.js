@@ -29,7 +29,28 @@ var isTape = function(t) { return t.hasOwnProperty('fanout'); };
 // needswork: check if all operators used here are primitive or lifted
 var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
   var fn = function(x_1, x_2) {
-    if (isDualNumber(x_1)) {
+    if (isTape(x_1)) {
+      if (isTape(x_2))
+        if (x_1.epsilon < x_2.epsilon)
+          return tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
+        else if (x_2.epsilon < x_1.epsilon)
+          return tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
+        else
+          return tape(x_1.epsilon,
+                      fn(x_1.primal, x_2.primal),
+                      [df_dx1(x_1.primal, x_2.primal), df_dx2(x_1.primal, x_2.primal)],
+                      [x_1, x_2])
+      else if (isDualNumber(x_2))
+        if (x_1.epsilon < x_2.epsilon)
+          return makeDualNumber(x_2.epsilon,
+                                fn(x_1, x_2.primal),
+                                d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
+        else
+          return tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
+      else
+        return tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
+    }
+    else if (isDualNumber(x_1)) {
       if (isDualNumber(x_2))
         if (x_1.epsilon < x_2.epsilon)
           return makeDualNumber(x_2.epsilon,
@@ -55,33 +76,14 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
         return makeDualNumber(x_1.epsilon,
                               fn(x_1.primal, x_2),
                               d_mul(df_dx1(x_1.primal, x_2), x_1.perturbation))
-    } else if (isTape(x_1)) {
-      if (isDualNumber(x_2))
-        if (x_1.epsilon < x_2.epsilon)
-          return makeDualNumber(x_2.epsilon,
-                                fn(x_1, x_2.primal),
-                                d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
-        else
-          return tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
-      else if (isTape(x_2))
-        if (x_1.epsilon < x_2.epsilon)
-          return tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
-        else if (x_2.epsilon < x_1.epsilon)
-          return tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
-        else
-          return tape(x_1.epsilon,
-                      fn(x_1.primal, x_2.primal),
-                      [df_dx1(x_1.primal, x_2.primal), df_dx2(x_1.primal, x_2.primal)],
-                      [x_1, x_2])
-      else
-        return tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
-    } else {
-      if (isDualNumber(x_2))
+    }
+    else {
+      if (isTape(x_2))
+        return tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
+      else if (isDualNumber(x_2))
         return makeDualNumber(x_2.epsilon,
                               fn(x_1, x_2.primal),
                               d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
-      else if (isTape(x_2))
-        return tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
       else
         return f(x_1, x_2)
     }
@@ -91,10 +93,10 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
 
 var lift_real_to_real = function(f, df_dx, x) {
   var fn = function(x1) {
-    if (isDualNumber(x1))
-      return makeDualNumber(x1.epsilon, fn(x1.primal), d_mul(df_dx(x1.primal), x1.perturbation));
-    else if (isTape(x1))
+    if (isTape(x1))
       return tape(x1.epsilon, fn(x1.primal), [df_dx(x1.primal)], [x1]);
+    else if (isDualNumber(x1))
+      return makeDualNumber(x1.epsilon, fn(x1.primal), d_mul(df_dx(x1.primal), x1.perturbation));
     else
       return f(x1);
   }
