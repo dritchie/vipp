@@ -7,15 +7,63 @@ var S_dualNumber = function(epsilon, primal, perturbation) {
 };
 var isDualNumber = function(dn) { return dn instanceof S_dualNumber };
 
-var S_tape = function(epsilon, primal, factors, tapes) {
+var S_tape = function(epsilon, primal) {
   this.epsilon = epsilon;
   this.primal = primal;
-  this.factors = factors;
-  this.tapes = tapes;
   this.fanout = 0;
   this.sensitivity = 0.0;
 };
+S_tape.prototype = {
+  determineFanout: function() { this.fanout += 1; },
+  reversePhase: function(sensitivity) {
+    this.sensitivity = d_add(this.sensitivity, sensitivity);
+    this.fanout -= 1;
+  }
+};
 var isTape = function(t) { return t instanceof S_tape; };
+
+var S_tape1 = function(epsilon, primal, factor, tape) {
+  S_tape.call(this, epsilon, primal);
+  this.factor = factor;
+  this.tape = tape;
+}
+S_tape1.prototype = new S_tape();
+S_tape1.prototype.determineFanout = function() {
+  this.fanout += 1;
+  if (this.fanout === 1)
+    this.tape.determineFanout();
+}
+S_tape1.prototype.reversePhase = function(sensitivity) {
+  this.sensitivity = d_add(this.sensitivity, sensitivity);
+  this.fanout -= 1;
+  if (this.fanout === 0)
+    this.tape.reversePhase(d_mul(this.sensitivity, this.factor));
+}
+
+var S_tape2 = function(epsilon, primal, factor1, factor2, tape1, tape2) {
+  S_tape.call(this, epsilon, primal);
+  this.factor1 = factor1;
+  this.factor2 = factor2;
+  this.tape1 = tape1;
+  this.tape2 = tape2;
+}
+S_tape2.prototype = new S_tape();
+S_tape2.prototype.determineFanout = function() {
+  this.fanout += 1;
+  if (this.fanout === 1) {
+    this.tape1.determineFanout();
+    this.tape2.determineFanout();
+  }
+}
+S_tape2.prototype.reversePhase = function(sensitivity) {
+  this.sensitivity = d_add(this.sensitivity, sensitivity);
+  this.fanout -= 1;
+  if (this.fanout === 0) {
+    this.tape1.reversePhase(d_mul(this.sensitivity, this.factor1));
+    this.tape2.reversePhase(d_mul(this.sensitivity, this.factor2));
+  }
+}
+
 
 // needswork: check if all operators used here are primitive or lifted
 var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
@@ -23,23 +71,23 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
     if (isTape(x_1)) {
       if (isTape(x_2))
         if (x_1.epsilon < x_2.epsilon)
-          return new S_tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
+          return new S_tape1(x_2.epsilon, fn(x_1, x_2.primal), df_dx2(x_1, x_2.primal), x_2)
         else if (x_2.epsilon < x_1.epsilon)
-          return new S_tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
+          return new S_tape1(x_1.epsilon, fn(x_1.primal, x_2), df_dx1(x_1.primal, x_2), x_1)
         else
-          return new S_tape(x_1.epsilon,
+          return new S_tape2(x_1.epsilon,
                       fn(x_1.primal, x_2.primal),
-                      [df_dx1(x_1.primal, x_2.primal), df_dx2(x_1.primal, x_2.primal)],
-                      [x_1, x_2])
+                      df_dx1(x_1.primal, x_2.primal), df_dx2(x_1.primal, x_2.primal),
+                      x_1, x_2)
       else if (isDualNumber(x_2))
         if (x_1.epsilon < x_2.epsilon)
           return new S_dualNumber(x_2.epsilon,
                                 fn(x_1, x_2.primal),
                                 d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
         else
-          return new S_tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
+          return new S_tape1(x_1.epsilon, fn(x_1.primal, x_2), df_dx1(x_1.primal, x_2), x_1)
       else
-        return new S_tape(x_1.epsilon, fn(x_1.primal, x_2), [df_dx1(x_1.primal, x_2)], [x_1])
+        return new S_tape1(x_1.epsilon, fn(x_1.primal, x_2), df_dx1(x_1.primal, x_2), x_1)
     }
     else if (isDualNumber(x_1)) {
       if (isDualNumber(x_2))
@@ -58,7 +106,7 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
                                       d_mul(df_dx2(x_1.primal, x_2.primal), x_2.perturbation)))
       else if (isTape(x_2))
         if (x_1.epsilon < x_2.epsilon)
-          return new S_tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
+          return new S_tape1(x_2.epsilon, fn(x_1, x_2.primal), df_dx2(x_1, x_2.primal), x_2)
         else
           return new S_dualNumber(x_1.epsilon,
                                 fn(x_1.primal, x_2),
@@ -70,7 +118,7 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
     }
     else {
       if (isTape(x_2))
-        return new S_tape(x_2.epsilon, fn(x_1, x_2.primal), [df_dx2(x_1, x_2.primal)], [x_2])
+        return new S_tape1(x_2.epsilon, fn(x_1, x_2.primal), df_dx2(x_1, x_2.primal), x_2)
       else if (isDualNumber(x_2))
         return new S_dualNumber(x_2.epsilon,
                               fn(x_1, x_2.primal),
@@ -85,7 +133,7 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
 var lift_real_to_real = function(f, df_dx, x) {
   var fn = function(x1) {
     if (isTape(x1))
-      return new S_tape(x1.epsilon, fn(x1.primal), [df_dx(x1.primal)], [x1]);
+      return new S_tape1(x1.epsilon, fn(x1.primal), df_dx(x1.primal), x1);
     else if (isDualNumber(x1))
       return new S_dualNumber(x1.epsilon, fn(x1.primal), d_mul(df_dx(x1.primal), x1.perturbation));
     else
@@ -242,32 +290,14 @@ var gradientF = function(f) {
   }
 }
 
-var determineFanout = function(tape) {
-  tape.fanout += 1;
-  if (tape.fanout == 1) {
-    var n = tape.tapes.length;
-    while (n--) determineFanout(tape.tapes[n]);
-  }
-}
-
-var reversePhase = function(sensitivity, tape) {
-  tape.sensitivity = d_add(tape.sensitivity, sensitivity);
-  tape.fanout -= 1;
-  if (tape.fanout == 0) {
-    var sens = tape.sensitivity;
-    var n = tape.factors.length;
-    while (n--) reversePhase(d_mul(sens, tape.factors[n]), tape.tapes[n]);
-  }
-}
-
 var gradientR = function(f) {
   return function(x) {
     _e_ += 1;
-    var new_x = x.map( function(xi) { return new S_tape(_e_, xi, [], []) } )
+    var new_x = x.map( function(xi) { return new S_tape(_e_, xi) } )
     var y = f(new_x);
     if (isTape(y) && !lt_e(y.epsilon, _e_)) {
-      determineFanout(y);
-      reversePhase(1.0, y);
+      y.determineFanout();
+      y.reversePhase(1.0);
     }
     _e_ -= 1;
     return new_x.map(function(v){return v.sensitivity})
