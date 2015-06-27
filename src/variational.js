@@ -44,6 +44,12 @@ function infer(target, guide, args, opts) {
 
 	// Define the inference coroutine
 	var vco = {
+		erpScoreRaw: function(erp, params, val) {
+			this.score += erp.score(params, val);
+		},
+		erpScoreAD: function(erp, params, val) {
+			this.score = ad_add(this.score, erp.adscore(params, val));
+		},
 		sample: function(erp, params) {
 			var val = this.choices[this.choiceIndex];
 			if (val === undefined) {
@@ -53,7 +59,7 @@ function infer(target, guide, args, opts) {
 				val = erp.sample(pparams);
 				this.choices.push(val);
 			}
-			this.score = ad_add(this.score, erp.score(params, val));
+			this.erpScore(erp, params, val);
 			// // TEST: no AD
 			// var localgrad = erp.grad(params, val);
 			// for (var i = 0; i < localgrad.length; i++) this.grad.push(localgrad[i]);
@@ -61,20 +67,25 @@ function infer(target, guide, args, opts) {
 			this.choiceIndex++;
 			return val;
 		},
-		factor: function(num) {
+		factorRaw: function(num) {
+			this.score += num;
+		},
+		factorAD: function(num) {
 			this.score = ad_add(this.score, num);
 		},
-		run: function(thunk) {
+		run: function(thunk, ad) {
 			this.choices = [];
-			return this.rerun(thunk);
+			return this.rerun(thunk, ad);
 		},
-		rerun: function(thunk) {
+		rerun: function(thunk, ad) {
 			// // TEST
 			// this.grad = [];
 			// //
 			this.paramIndex = 0;
 			this.choiceIndex = 0;
-			this.score = 0;	
+			this.score = 0;
+			this.erpScore = (ad ? this.erpScoreAD : this.erpScoreRaw);
+			this.factor = (ad ? this.factorAD : this.factorRaw);
 			return thunk();
 		}
 	}
@@ -122,7 +133,7 @@ function infer(target, guide, args, opts) {
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
-			var grad = vco.run(guideGradThunk);
+			var grad = vco.run(guideGradThunk, true);
 			// // TEST: no AD
 			// vco.run(guideThunk);
 			// var grad = vco.grad;

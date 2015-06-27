@@ -25,7 +25,8 @@
 var _ = require('underscore');
 var assert = require('assert');
 var util = require('./util.js');
-var scorers = require('./erp_scorers.js');
+var scorers = require('./erp_scorers.adjs');
+var adscorers = require('./erp_scorers.js');
 
 function ERP(sampler, scorer, auxParams) {
   auxParams = typeof auxParams === 'undefined' ? {} : auxParams;
@@ -62,7 +63,8 @@ var bernoulliERP = new ERP(
         assert(weight >= 0 && weight <= 1,
                'bernoulliERP param outside of domain.');
         return val ? [1 / weight] : [-1 / (1 - weight)];
-      }
+      },
+      adscore: adscorers.flip
     }
     );
 
@@ -75,7 +77,8 @@ var randomIntegerERP = new ERP(
     {
       support: function randomIntegerSupport(params) {
         return _.range(params[0]);
-      }
+      },
+      adscore: adscorers.randomInteger
     }
     );
 
@@ -104,7 +107,10 @@ function gaussianGrad(params, x) {
   return [muGrad, sigmaGrad];
 }
 
-var gaussianERP = new ERP(gaussianSample, scorers.gaussian, { grad: gaussianGrad });
+var gaussianERP = new ERP(gaussianSample, scorers.gaussian, {
+  grad: gaussianGrad,
+  adscore: adscorers.gaussian
+});
 
 var discreteERP = new ERP(
     function discreteSample(params) {
@@ -115,7 +121,8 @@ var discreteERP = new ERP(
       support:
           function discreteSupport(params) {
             return _.range(params[0].length);
-          }
+          },
+      adscore: adscorers.discrete
     }
     );
 
@@ -181,7 +188,8 @@ var gammaERP = new ERP(
     gammaSample,
     scorers.gamma,
     {
-      grad: gammaGrad
+      grad: gammaGrad,
+      adscore: adscorers.gamma
     }
     );
 
@@ -191,7 +199,10 @@ var exponentialERP = new ERP(
       var u = Math.random();
       return Math.log(u) / (-1 * a);
     },
-    scorers.exponential
+    scorers.exponential,
+    {
+      adscore: adscorers.exponential
+    }
     );
 
 function betaSample(params) {
@@ -211,7 +222,8 @@ var betaERP = new ERP(
         assert(a > 0 && b > 0, 'betaERP param outside of domain.');
         var d = digamma(a + b);
         return [Math.log(x) - digamma(a) + d, Math.log(1 - x) - digamma(b) + d];
-      }
+      },
+      adscore: adscorers.beta
     }
     );
 
@@ -252,7 +264,8 @@ var binomialERP = new ERP(
       support:
           function binomialSupport(params) {
             return _.range(params[1]).concat([params[1]]);
-          }
+          },
+      adscore: adscorers.binomial
     }
     );
 
@@ -278,7 +291,10 @@ var poissonERP = new ERP(
       } while (p > emu);
       return (k - 1) || 0;
     },
-    scorers.poisson
+    scorers.poisson,
+    {
+      adscore: adscorers.poisson
+    }
     );
 
 function dirichletSample(params) {
@@ -308,7 +324,10 @@ function dirichletGrad(params, val) {
   return grad;
 }
 
-var dirichletERP = new ERP(dirichletSample, scorers.dirichlet, { grad: dirichletGrad });
+var dirichletERP = new ERP(dirichletSample, scorers.dirichlet, {
+  grad: dirichletGrad,
+  adscore: adscorers.dirichlet
+});
 
 function multinomialSample(theta) {
   var thetaSum = util.sum(theta);
