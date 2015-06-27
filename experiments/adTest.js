@@ -30,7 +30,7 @@ var conditions = [
 ];
 var sizes = [];
 for (var i = 100; i <= 1000; i += 100 ) sizes.push(i);
-var numRuns = 20;
+var numRuns = 40;
 var mu0 = 0.5;
 var sigma0 = 1.5;
 var csvFile = fs.openSync('./experiments/adTest_js.csv', 'w');

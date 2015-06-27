@@ -16,7 +16,7 @@ var S_tape = function(epsilon, primal) {
 S_tape.prototype = {
   determineFanout: function() { this.fanout += 1; },
   reversePhase: function(sensitivity) {
-    this.sensitivity = d_add(this.sensitivity, sensitivity);
+    this.sensitivity += sensitivity;
     this.fanout -= 1;
   }
 };
@@ -34,10 +34,10 @@ S_tape1.prototype.determineFanout = function() {
     this.tape.determineFanout();
 }
 S_tape1.prototype.reversePhase = function(sensitivity) {
-  this.sensitivity = d_add(this.sensitivity, sensitivity);
+  this.sensitivity += sensitivity;
   this.fanout -= 1;
   if (this.fanout === 0)
-    this.tape.reversePhase(d_mul(this.sensitivity, this.factor));
+    this.tape.reversePhase(this.sensitivity*this.factor);
 }
 
 var S_tape2 = function(epsilon, primal, factor1, factor2, tape1, tape2) {
@@ -56,11 +56,11 @@ S_tape2.prototype.determineFanout = function() {
   }
 }
 S_tape2.prototype.reversePhase = function(sensitivity) {
-  this.sensitivity = d_add(this.sensitivity, sensitivity);
+  this.sensitivity += sensitivity;
   this.fanout -= 1;
   if (this.fanout === 0) {
-    this.tape1.reversePhase(d_mul(this.sensitivity, this.factor1));
-    this.tape2.reversePhase(d_mul(this.sensitivity, this.factor2));
+    this.tape1.reversePhase(this.sensitivity*this.factor1);
+    this.tape2.reversePhase(this.sensitivity*this.factor2);
   }
 }
 
