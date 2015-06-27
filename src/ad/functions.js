@@ -1,12 +1,5 @@
 "use strict";
 
-var S_dualNumber = function(epsilon, primal, perturbation) {
-  this.epsilon = epsilon;
-  this.primal = primal;
-  this.perturbation = perturbation;
-};
-var isDualNumber = function(dn) { return dn instanceof S_dualNumber };
-
 var S_tape = function(epsilon, primal) {
   this.epsilon = epsilon;
   this.primal = primal;
@@ -79,50 +72,12 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
                       fn(x_1.primal, x_2.primal),
                       df_dx1(x_1.primal, x_2.primal), df_dx2(x_1.primal, x_2.primal),
                       x_1, x_2)
-      else if (isDualNumber(x_2))
-        if (x_1.epsilon < x_2.epsilon)
-          return new S_dualNumber(x_2.epsilon,
-                                fn(x_1, x_2.primal),
-                                d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
-        else
-          return new S_tape1(x_1.epsilon, fn(x_1.primal, x_2), df_dx1(x_1.primal, x_2), x_1)
       else
         return new S_tape1(x_1.epsilon, fn(x_1.primal, x_2), df_dx1(x_1.primal, x_2), x_1)
-    }
-    else if (isDualNumber(x_1)) {
-      if (isDualNumber(x_2))
-        if (x_1.epsilon < x_2.epsilon)
-          return new S_dualNumber(x_2.epsilon,
-                                fn(x_1, x_2.primal),
-                                d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
-        else if (x_2.epsilon < x_1.epsilon)
-          return new S_dualNumber(x_1.epsilon,
-                                fn(x_1.primal, x_2),
-                                d_mul(df_dx1(x_1.primal, x_2), x_1.perturbation))
-        else
-          return new S_dualNumber(x_1.epsilon,
-                                fn(x_1.primal, x_2.primal),
-                                d_add(d_mul(df_dx1(x_1.primal, x_2.primal), x_1.perturbation),
-                                      d_mul(df_dx2(x_1.primal, x_2.primal), x_2.perturbation)))
-      else if (isTape(x_2))
-        if (x_1.epsilon < x_2.epsilon)
-          return new S_tape1(x_2.epsilon, fn(x_1, x_2.primal), df_dx2(x_1, x_2.primal), x_2)
-        else
-          return new S_dualNumber(x_1.epsilon,
-                                fn(x_1.primal, x_2),
-                                d_mul(df_dx1(x_1.primal, x_2), x_1.perturbation))
-      else
-        return new S_dualNumber(x_1.epsilon,
-                              fn(x_1.primal, x_2),
-                              d_mul(df_dx1(x_1.primal, x_2), x_1.perturbation))
     }
     else {
       if (isTape(x_2))
         return new S_tape1(x_2.epsilon, fn(x_1, x_2.primal), df_dx2(x_1, x_2.primal), x_2)
-      else if (isDualNumber(x_2))
-        return new S_dualNumber(x_2.epsilon,
-                              fn(x_1, x_2.primal),
-                              d_mul(df_dx2(x_1, x_2.primal), x_2.perturbation))
       else
         return f(x_1, x_2)
     }
@@ -134,8 +89,6 @@ var lift_real_to_real = function(f, df_dx, x) {
   var fn = function(x1) {
     if (isTape(x1))
       return new S_tape1(x1.epsilon, fn(x1.primal), df_dx(x1.primal), x1);
-    else if (isDualNumber(x1))
-      return new S_dualNumber(x1.epsilon, fn(x1.primal), d_mul(df_dx(x1.primal), x1.perturbation));
     else
       return f(x1);
   }
@@ -181,9 +134,9 @@ var overloader_2op = function(baseF, lifter1, lifter2) {
 // this might need primal* if cmp operators are used with &rest
 var overloader_2cmp = function(baseF) {
   var fn = function(x1, x2) {
-      if (isDualNumber(x1) || isTape(x1))
+      if (isTape(x1))
         return fn(x1.primal, x2);
-      else if (isDualNumber(x2) || isTape(x2))
+      else if (isTape(x2))
         return fn(x1, x2.primal);
       else
         return baseF(x1, x2);
@@ -269,27 +222,6 @@ var _e_ = 0
 
 var lt_e = function(e1, e2) { return e1 < e2 }
 
-var derivativeF = function(f) {
-  return function(x) {
-    _e_ += 1;
-    var y = f(new S_dualNumber(_e_, x, 1.0));
-    var y_prime = (!isDualNumber(y) || lt_e(y.epsilon, _e_)) ? 0.0 : y.perturbation;
-    _e_ -= 1;
-    return y_prime;
-  }
-}
-
-var replace_ith = function(x, i, xi) { var c = x.slice(0); c[i] = xi; return c; }
-
-var gradientF = function(f) {
-  return function(x) {
-    return x.map(function(xval) {
-      var i = x.indexOf(xval);
-      return derivativeF(function(xi) {return f(replace_ith(x, i, xi))})(xval);
-    })
-  }
-}
-
 var gradientR = function(f) {
   return function(x) {
     _e_ += 1;
@@ -332,8 +264,6 @@ module.exports = {
   ad_sin: d_sin,
   ad_cos: d_cos,
   ad_atan: d_atan,
-  ad_derivativeF: derivativeF,
-  ad_gradientF: gradientF,
   ad_derivativeR: derivativeR,
   ad_gradientR: gradientR,
   // For testing purposes only
