@@ -74,18 +74,22 @@ S_tape2.prototype.reversePhase = function(sensitivity) {
   }
 }
 
-
-// needswork: check if all operators used here are primitive or lifted
-// TODO: Get rid of recursion here?
 var lift_realreal_to_real = function(f, df_dx1, df_dx2) {
-  var fn = function(x_1, x_2) {
+  var liftedfn;
+  //// Switch to support higher-order derivatives
+  var fn = f;
+  // var fn = liftedfn;
+  ////
+  liftedfn = function(x_1, x_2) {
     if (isTape(x_1)) {
       if (isTape(x_2))
-        if (x_1.epsilon < x_2.epsilon)
-          return new S_tape1(x_2.epsilon, fn(x_1, x_2.primal), df_dx2(x_1, x_2.primal), x_2)
-        else if (x_2.epsilon < x_1.epsilon)
-          return new S_tape1(x_1.epsilon, fn(x_1.primal, x_2), df_dx1(x_1.primal, x_2), x_1)
-        else
+        //// Un-comment to support higher-order derivatives
+        // if (x_1.epsilon < x_2.epsilon)
+        //   return new S_tape1(x_2.epsilon, fn(x_1, x_2.primal), df_dx2(x_1, x_2.primal), x_2)
+        // else if (x_2.epsilon < x_1.epsilon)
+        //   return new S_tape1(x_1.epsilon, fn(x_1.primal, x_2), df_dx1(x_1.primal, x_2), x_1)
+        // else
+        ////
           return new S_tape2(x_1.epsilon,
                       fn(x_1.primal, x_2.primal),
                       df_dx1(x_1.primal, x_2.primal), df_dx2(x_1.primal, x_2.primal),
@@ -100,17 +104,22 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2) {
         return f(x_1, x_2)
     }
   };
-  return fn;
+  return liftedfn;
 };
 
 var lift_real_to_real = function(f, df_dx) {
-  var fn = function(x1) {
+  var liftedfn;
+  //// Switch to support higher-order derivatives
+  var fn = f;
+  // var fn = liftedfn;
+  ////
+  liftedfn = function(x1) {
     if (isTape(x1))
       return new S_tape1(x1.epsilon, fn(x1.primal), df_dx(x1.primal), x1);
     else
       return f(x1);
   }
-  return fn;
+  return liftedfn;
 };
 
 /** functional wrappers for primitive operators **/
@@ -136,17 +145,28 @@ var f_geq = function(a,b) {return a>=b};
 var f_leq = function(a,b) {return a<=b};
 
 
-// this might need primal* if cmp operators are used with &rest
-// TODO: Get rid of the recursion here?
 var overloader_2cmp = function(baseF) {
+  //// Switch to support higher-order derivatives
   var fn = function(x1, x2) {
-      if (isTape(x1))
-        return fn(x1.primal, x2);
-      else if (isTape(x2))
-        return fn(x1, x2.primal);
+    if (isTape(x1)) {
+      if (isTape(x2))
+        return baseF(x1.primal, x2.primal);
       else
-        return baseF(x1, x2);
-    }
+        return baseF(x1.primal, x2);
+    } else if (isTape(x2))
+      return baseF(x1, x2.primal);
+    else
+      return baseF(x1, x2);
+  }
+  // var fn = function(x1, x2) {
+  //     if (isTape(x1))
+  //       return fn(x1.primal, x2);
+  //     else if (isTape(x2))
+  //       return fn(x1, x2.primal);
+  //     else
+  //       return baseF(x1, x2);
+  //   }
+  ////
   return fn;
 };
 var zeroF = function(x){return 0;};
