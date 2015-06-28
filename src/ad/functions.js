@@ -9,6 +9,7 @@ var S_tape = function(epsilon, primal) {
 S_tape.prototype = {
   determineFanout: function() { this.fanout += 1; },
   reversePhase: function(sensitivity) {
+    // Use d_add here to support higher-order derivatives
     this.sensitivity += sensitivity;
     this.fanout -= 1;
   }
@@ -27,10 +28,13 @@ S_tape1.prototype.determineFanout = function() {
     this.tape.determineFanout();
 }
 S_tape1.prototype.reversePhase = function(sensitivity) {
+  // Use d_add here to support higher-order derivatives
   this.sensitivity += sensitivity;
   this.fanout -= 1;
-  if (this.fanout === 0)
+  if (this.fanout === 0) {
+    // Use d_mul here to support higher-order derivatives
     this.tape.reversePhase(this.sensitivity*this.factor);
+  }
 }
 
 var S_tape2 = function(epsilon, primal, factor1, factor2, tape1, tape2) {
@@ -49,9 +53,11 @@ S_tape2.prototype.determineFanout = function() {
   }
 }
 S_tape2.prototype.reversePhase = function(sensitivity) {
+  // Use d_add here to support higher-order derivatives
   this.sensitivity += sensitivity;
   this.fanout -= 1;
   if (this.fanout === 0) {
+    // Use d_mul here to support higher-order derivatives
     this.tape1.reversePhase(this.sensitivity*this.factor1);
     this.tape2.reversePhase(this.sensitivity*this.factor2);
   }
