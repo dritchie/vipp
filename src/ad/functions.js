@@ -141,13 +141,7 @@ var overloader_2cmp = function(baseF) {
       else
         return baseF(x1, x2);
     }
-  return function(x1, x2) {
-    if (isNumeric(x1) && isNumeric(x2))
-      return baseF(x1, x2);
-    else {
-      return fn(x1, x2);
-    }
-  };
+  return fn;
 };
 var zeroF = function(x){return 0;};
 var oneF = function(x1, x2){return 1.0;};
