@@ -59,7 +59,8 @@ S_tape2.prototype.reversePhase = function(sensitivity) {
 
 
 // needswork: check if all operators used here are primitive or lifted
-var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
+// TODO: Get rid of recursion here?
+var lift_realreal_to_real = function(f, df_dx1, df_dx2) {
   var fn = function(x_1, x_2) {
     if (isTape(x_1)) {
       if (isTape(x_2))
@@ -82,17 +83,17 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2, x1, x2) {
         return f(x_1, x_2)
     }
   };
-  return fn(x1, x2);
+  return fn;
 };
 
-var lift_real_to_real = function(f, df_dx, x) {
+var lift_real_to_real = function(f, df_dx) {
   var fn = function(x1) {
     if (isTape(x1))
       return new S_tape1(x1.epsilon, fn(x1.primal), df_dx(x1.primal), x1);
     else
       return f(x1);
   }
-  return fn(x);
+  return fn;
 };
 
 /** Lifting operations **/
@@ -124,14 +125,16 @@ var f_leq = function(a,b) {return a<=b};
 
 /** helpers **/
 var overloader_2op = function(baseF, lifter1, lifter2) {
+  var liftedf = lift_realreal_to_real(baseF, lifter1, lifter2);
   return function(x1, x2) {
     if (isNumeric(x1) && isNumeric(x2))
       return baseF(x1, x2);
     else
-      return lift_realreal_to_real(baseF, lifter1, lifter2, x1, x2);
+      return liftedf(x1, x2);
   }
 };
 // this might need primal* if cmp operators are used with &rest
+// TODO: Get rid of the recursion here?
 var overloader_2cmp = function(baseF) {
   var fn = function(x1, x2) {
       if (isTape(x1))
@@ -175,21 +178,13 @@ var d_geq = overloader_2cmp(f_geq);
 var d_leq = overloader_2cmp(f_leq);
 
 
-var d_sqrt = function(x) {
-  return lift_real_to_real(Math.sqrt, function(x){return d_div(1, d_mul(2.0, d_sqrt(x)))}, x)
-};
+var d_sqrt = lift_real_to_real(Math.sqrt, function(x){return d_div(1, d_mul(2.0, d_sqrt(x)))});
 
-var d_exp = function(x) {
-  return lift_real_to_real(Math.exp, function(x){return d_exp(x)}, x);
-};
+var d_exp = lift_real_to_real(Math.exp, function(x){return d_exp(x)});
 
-var d_log = function(x) {
-  return lift_real_to_real(Math.log, function(x){return d_div(1,x)}, x);
-};
+var d_log = lift_real_to_real(Math.log, function(x){return d_div(1,x)});
 
-var d_floor = function(x) {
-  return lift_real_to_real(Math.floor, zeroF, x);
-};
+var d_floor = lift_real_to_real(Math.floor, zeroF);
 
 var d_pow = function(x1, x2) {
   return lift_realreal_to_real(Math.pow,
@@ -207,13 +202,12 @@ var d_cos = function(x) {
   return lift_real_to_real(Math.cos, function(x){return d_sub(0, d_sin(x))}, x);
 };
 
+var d_atan_core = lift_realreal_to_real(Math.atan2,
+                               function(x1, x2){return d_div(x2, d_add(d_mul(x1,x1), d_mul(x2,x2)));},
+                               function(x1, x2){return d_div(d_sub(0,x1), d_add(d_mul(x1,x1), d_mul(x2,x2)));});
 var d_atan = function(x1, x2) {
   x2 = x2 === undefined ? 1 : x2; // just atan, not atan2
-  return lift_realreal_to_real(Math.atan2,
-                               function(x1, x2){return d_div(x2, d_add(d_mul(x1,x1), d_mul(x2,x2)));},
-                               function(x1, x2){return d_div(d_sub(0,x1), d_add(d_mul(x1,x1), d_mul(x2,x2)));},
-                               x1,
-                               x2);
+  return d_atan_core(x1, x2);
 };
 
 
