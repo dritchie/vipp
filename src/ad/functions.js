@@ -9,8 +9,10 @@ var S_tape = function(epsilon, primal) {
 S_tape.prototype = {
   determineFanout: function() { this.fanout += 1; },
   reversePhase: function(sensitivity) {
-    // Use d_add here to support higher-order derivatives
+    //// Switch to support higher-order derivatives
+    // this.sensitivity = d_add(this.sensitivity, sensitivity)
     this.sensitivity += sensitivity;
+    ////
     this.fanout -= 1;
   }
 };
@@ -28,12 +30,16 @@ S_tape1.prototype.determineFanout = function() {
     this.tape.determineFanout();
 }
 S_tape1.prototype.reversePhase = function(sensitivity) {
-  // Use d_add here to support higher-order derivatives
+  //// Switch to support higher-order derivatives
+  // this.sensitivity = d_add(this.sensitivity, sensitivity)
   this.sensitivity += sensitivity;
+  ////
   this.fanout -= 1;
   if (this.fanout === 0) {
-    // Use d_mul here to support higher-order derivatives
+    //// Switch to support higher-order derivatives
+    // this.tape.reversePhase(d_mul(this.sensitivity, this.factor));
     this.tape.reversePhase(this.sensitivity*this.factor);
+    ////
   }
 }
 
@@ -53,13 +59,18 @@ S_tape2.prototype.determineFanout = function() {
   }
 }
 S_tape2.prototype.reversePhase = function(sensitivity) {
-  // Use d_add here to support higher-order derivatives
+   //// Switch to support higher-order derivatives
+  // this.sensitivity = d_add(this.sensitivity, sensitivity)
   this.sensitivity += sensitivity;
+  ////
   this.fanout -= 1;
   if (this.fanout === 0) {
-    // Use d_mul here to support higher-order derivatives
+    //// Switch to support higher-order derivatives
     this.tape1.reversePhase(this.sensitivity*this.factor1);
     this.tape2.reversePhase(this.sensitivity*this.factor2);
+    // this.tape1.reversePhase(d_mul(this.sensitivity, this.factor1));
+    // this.tape2.reversePhase(d_mul(this.sensitivity, this.factor2));
+    ////
   }
 }
 
@@ -101,11 +112,6 @@ var lift_real_to_real = function(f, df_dx) {
   }
   return fn;
 };
-
-/** Lifting operations **/
-function isNumeric(n) {
-  return !isNaN(parseFloat(n)) && isFinite(n);
-}
 
 /** functional wrappers for primitive operators **/
 var f_minus = function(a) {return -a};
