@@ -203,21 +203,13 @@ var d_log = lift_real_to_real(Math.log, function(x){return d_div(1,x)});
 
 var d_floor = lift_real_to_real(Math.floor, zeroF);
 
-var d_pow = function(x1, x2) {
-  return lift_realreal_to_real(Math.pow,
+var d_pow = lift_realreal_to_real(Math.pow,
                                function(x1, x2){return d_mul(x2, d_pow(x1, d_sub(x2, 1)));},
-                               function(x1, x2){return d_mul(d_log(x1), d_pow(x1, x2));},
-                               x1,
-                               x2);
-};
+                               function(x1, x2){return d_mul(d_log(x1), d_pow(x1, x2));});
 
-var d_sin = function(x) {
-  return lift_real_to_real(Math.sin, function(x){return d_cos(x)}, x);
-};
+var d_sin = lift_real_to_real(Math.sin, function(x){return d_cos(x)});
 
-var d_cos = function(x) {
-  return lift_real_to_real(Math.cos, function(x){return d_sub(0, d_sin(x))}, x);
-};
+var d_cos = lift_real_to_real(Math.cos, function(x){return d_sub(0, d_sin(x))});
 
 var d_atan_core = lift_realreal_to_real(Math.atan2,
                                function(x1, x2){return d_div(x2, d_add(d_mul(x1,x1), d_mul(x2,x2)));},
