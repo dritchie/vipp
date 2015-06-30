@@ -2,6 +2,7 @@
 ADFILES = $(wildcard src/*.adjs)
 MACROS = src/ad/macros.js
 TRANSFORM = src/ad/transform
+TRANSFORMLIB = src/ad/transform.js
 ADFILES_TRANSFORMED = $(ADFILES:.adjs=.js)
 
 # Browser stuff
@@ -12,7 +13,7 @@ MAINFILE = src/main.js
 
 all: $(ADFILES_TRANSFORMED)
 
-src/%.js: src/%.adjs $(MACROS)
+src/%.js: src/%.adjs $(MACROS) $(TRANSFORM) $(TRANSFORMLIB)
 	$(TRANSFORM) $< > $@
 
 browser: $(MINIFIED)
