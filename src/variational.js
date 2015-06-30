@@ -161,7 +161,7 @@ function infer(target, guide, args, opts) {
 		var elboEst = sumScoreDiff / nSamples;
 		// Record some statistics, if requested
 		if (recordStepStats) {
-			stepStats.time.push(present() - tStart);
+			stepStats.time.push((present() - tStart)/1000);
 			stepStats.elbo.push(elboEst);
 		}
 		// Compute AdaGrad learning rate and control variate,
@@ -202,7 +202,7 @@ function infer(target, guide, args, opts) {
 	var ret = {
 		converged: converged,
 		stepsTaken: currStep,
-		timeTaken: tEnd - tStart,
+		timeTaken: (tEnd - tStart)/1000,
 		elbo: elboEst,
 		params: params
 	};

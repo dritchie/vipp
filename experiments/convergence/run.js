@@ -30,7 +30,7 @@ var condition_options = {
 
 var conditions = makeConditions([
 	{name: 'Mean-field', guide: 'guide_meanField'},
-	{name: 'Mean-field + Bounds', guide: 'guide_bounds'},
+	// {name: 'Mean-field + Bounds', guide: 'guide_bounds'},
 	{name: 'Mean-field + Backprop', guide: 'guide_backprop'}
 ], condition_options);
 
