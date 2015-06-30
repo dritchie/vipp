@@ -49,7 +49,7 @@ for i=100,1000,100 do table.insert(sizes, i) end
 local numRuns = 100
 local mu = 0.5
 local sigma = 1.5
-local csvFile = io.open('./experiments/adTest_terra.csv', 'w')
+local csvFile = io.open('./experiments/adTest/adTest_terra.csv', 'w')
 csvFile:write('condition,size,time\n')
 for _,condition in ipairs(conditions) do
 	print('CONDITION = ' .. condition)

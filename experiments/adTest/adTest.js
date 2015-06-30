@@ -1,8 +1,8 @@
 // NOTE: This script must be run from the repo root repository
 // i.e. 'node experiments/adTest.js'
 
-var ad = require('../src/ad/functions.js');
-var adtransform = require('../src/ad/transform.js').transform;
+var ad = require('../../src/ad/functions.js');
+var adtransform = require('../../src/ad/transform.js').transform;
 var fs = require('fs');
 
 // Install the AD functions globally
@@ -11,7 +11,7 @@ for (var prop in ad) {
 }
 
 // Set up the two versions of the code: ADed and non-ADed
-var rawcode = fs.readFileSync('./experiments/adTestModel.js').toString();
+var rawcode = fs.readFileSync('./experiments/adTest/adTestModel.js').toString();
 var makeRunTest = eval(rawcode)();
 var adcode = adtransform(rawcode);
 var makeRunTestAD = eval(adcode)();
@@ -33,7 +33,7 @@ for (var i = 100; i <= 1000; i += 100 ) sizes.push(i);
 var numRuns = 40;
 var mu0 = 0.5;
 var sigma0 = 1.5;
-var csvFile = fs.openSync('./experiments/adTest_js.csv', 'w');
+var csvFile = fs.openSync('./experiments/adTest/adTest_js.csv', 'w');
 fs.writeSync(csvFile, 'condition,size,time\n');
 for (var c = 0; c < conditions.length; c++) {
 	var condition = conditions[c];
