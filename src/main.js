@@ -3,13 +3,10 @@
 
 
 var adtransform = require('./ad/transform.js').transform;
-var syscall = require('child_process').execSync;
 
 
 function compile(code, doADtransform) {
 	doADtransform = doADtransform === undefined ? true : doADtransform;
-	// Invoke make, to be sure that everything is up-to-date
-	syscall('make', {stdio: null});
 	// AD and eval the code to get a callable thunk
 	if (doADtransform) code = adtransform(code);
 	// Eval the code to get a callable thunk
