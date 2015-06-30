@@ -1,7 +1,7 @@
 'use strict';
 
 var numeric = require('numeric');
-
+var present = require('present');
 
 // Get the primal value of a dual number/tape
 function primal(x) {
@@ -41,6 +41,7 @@ function infer(target, guide, args, opts) {
 	var learnRate = opt(opts.initLearnRate, 0.5);
 	var convergeEps = opt(opts.convergeEps, 0.1);
 	var verbosity = opt(opts.verbosity, 0);
+	var recordStepStats = opt(opts.recordStepStats, false);
 
 	// Define the inference coroutine
 	var vco = {
@@ -60,10 +61,6 @@ function infer(target, guide, args, opts) {
 				this.choices.push(val);
 			}
 			this.erpScore(erp, params, val);
-			// // TEST: no AD
-			// var localgrad = erp.grad(params, val);
-			// for (var i = 0; i < localgrad.length; i++) this.grad.push(localgrad[i]);
-			// //
 			this.choiceIndex++;
 			return val;
 		},
@@ -78,9 +75,6 @@ function infer(target, guide, args, opts) {
 			return this.rerun(thunk, ad);
 		},
 		rerun: function(thunk, ad) {
-			// // TEST
-			// this.grad = [];
-			// //
 			this.paramIndex = 0;
 			this.choiceIndex = 0;
 			this.score = 0;
@@ -111,7 +105,17 @@ function infer(target, guide, args, opts) {
 		return guideGrad(params);
 	}
 
-	
+	// Prep stats, if requeste
+	var stepStats = null;
+	if (recordStepStats) {
+		stepStats = {
+			time: [],
+			elbo: []
+		};
+	}
+
+	var tStart = present();
+
 	// Run guide once to initialize vector of params
 	// TODO: This will not work if params has variable size--we'll need to
 	//    adopt a different strategy then.
@@ -130,18 +134,16 @@ function infer(target, guide, args, opts) {
 		var sumGradSq = numeric.rep([params.length], 0);
 		var sumWeightedGrad = numeric.rep([params.length], 0);
 		var sumWeightedGradSq = numeric.rep([params.length], 0);
+		var sumScoreDiff = 0.0;
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
 			var grad = vco.run(guideGradThunk, true);
-			// // TEST: no AD
-			// vco.run(guideThunk);
-			// var grad = vco.grad;
-			// //
 			var guideScore = primal(vco.score);
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
 			var scoreDiff = targetScore - guideScore;
+			sumScoreDiff += scoreDiff;
 			var weightedGrad = numeric.mul(grad, scoreDiff);
 			if (verbosity > 4) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
@@ -155,6 +157,12 @@ function infer(target, guide, args, opts) {
 			numeric.addeq(sumGradSq, grad);
 			var weightedGradSq = numeric.mul(grad, scoreDiff)
 			numeric.addeq(sumWeightedGradSq, weightedGradSq);
+		}
+		var elboEst = sumScoreDiff / nSamples;
+		// Record some statistics, if requested
+		if (recordStepStats) {
+			stepStats.time.push(present() - tStart);
+			stepStats.elbo.push(elboEst);
 		}
 		// Compute AdaGrad learning rate and control variate,
 		//    then do parameter update
@@ -180,6 +188,7 @@ function infer(target, guide, args, opts) {
 		var converged = maxDeltaAvg < convergeEps;
 		currStep++;
 	} while (!converged && currStep < nSteps);
+	var tEnd = present();
 	if (verbosity > 0) {
 		if (converged)
 			console.log('CONVERGED after step ' + currStep + ' (' + maxDeltaAvg + ' < ' + convergeEps + ')');
@@ -190,7 +199,15 @@ function infer(target, guide, args, opts) {
 	// Restore original coroutine
 	oldCoroutine = oldCoroutine;
 
-	return params;
+	var ret = {
+		converged: converged,
+		stepsTaken: currStep,
+		timeTaken: tEnd - tStart,
+		elbo: elboEst,
+		params: params
+	};
+	if (recordStepStats) ret.stepStats = stepStats;
+	return ret;
 }
 
 function sample(erp, params) {
