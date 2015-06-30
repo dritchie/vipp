@@ -3,15 +3,17 @@
 
 
 var adtransform = require('./ad/transform.js').transform;
+var syscall = require('child_process').execSync;
 
 
-function compile(code) {
+function compile(code, doADtransform) {
+	doADtransform = doADtransform === undefined ? true : doADtransform;
+	// Invoke make, to be sure that everything is up-to-date
+	syscall('make', {stdio: null});
 	// AD and eval the code to get a callable thunk
-	var adcode = adtransform(code);
-	var wrappedcode = '(function() {\n' + adcode + '\n})\n';
-	// // TEST: no AD
-	// var wrappedcode = '(function() {\n' + code + '\n})\n';
-	// //
+	if (doADtransform) code = adtransform(code);
+	// Eval the code to get a callable thunk
+	var wrappedcode = '(function() {\n' + code + '\n})\n';
 	var fn = eval(wrappedcode);
 	return function() {
 		// Install header + AD stuff into the global environment.

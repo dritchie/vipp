@@ -3,7 +3,6 @@
 
 var vipp = require('./src/main');
 var fs = require('fs');
-var syscall = require('child_process').execSync;
 
 function main() {
 	// Parse args
@@ -13,8 +12,6 @@ function main() {
 		console.log('usage: vipp filename');
 		return;
 	}
-	// Invoke make, to be sure that everything is up-to-date
-	syscall('make', {stdio: null});
 	// Run the thing
 	var code = fs.readFileSync(filename);
 	var fn = vipp.compile(code);
