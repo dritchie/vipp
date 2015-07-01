@@ -218,19 +218,20 @@ function factor(num) {
 	coroutine.factor(num);
 }
 
-// Create/lookup a param
-function param(params, initialVal) {
-	if (coroutine.paramIndex == params.length)
+// Create/lookup a param.
+// May have an initial val, as well as an ERP.
+// The ERP may be used to sample an initial val (if 'initialVal' is undefined).
+// The ERP may also be used a prior score (if 'prior' is true).
+function param(params, initialVal, ERP, hypers, prior) {
+	if (coroutine.paramIndex == params.length) {
+		if (initialVal === undefined)
+			initialVal = ERP.sample(hypers);
 		params.push(primal(initialVal));
-	var ret = params[coroutine.paramIndex];
+	}
+	var p = params[coroutine.paramIndex];
 	coroutine.paramIndex++;
-	return ret;
-}
-
-// Create/lookup a param that has a prior
-function paramWithPrior(params, initialVal, scoreFn, hypers) {
-	var p = param(params, initialVal);
-	factor(scoreFn(hypers, p));
+	if (prior)
+		factor(ERP.score(hypers, p));
 	return p;
 }
 
@@ -239,8 +240,7 @@ module.exports = {
 	infer: infer,
 	sample: sample,
 	factor: factor,
-	param: param,
-	paramWithPrior: paramWithPrior
+	param: param
 };
 
 
