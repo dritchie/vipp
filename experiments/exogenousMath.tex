@@ -1,0 +1,36 @@
+\documentclass[10pt]{article}
+\usepackage[usenames]{color} %used for font color
+\usepackage{amssymb} %maths
+\usepackage{amsmath} %maths
+\usepackage[utf8]{inputenc} %useful to type directly diacritic characters
+
+\newcommand{\var}{\mathbf{x}}
+\newcommand{\vvar}{\mathbf{v}}
+\newcommand{\tvar}{\varepsilon}
+\newcommand{\target}{p}
+\newcommand{\guide}{q_\theta}
+\newcommand{\tguide}{\bar{q}}
+\newcommand{\tvguide}{\bar{q}_\theta}
+\newcommand{\transform}{g_\theta}
+\newcommand{\grad}{\nabla_\theta}
+\newcommand{\expect}{\mathbb{E}}
+
+% Normal update
+%\expect_{\guide(\var)} [ \grad \log \guide(\var) ( \log \target(\var) - \log \guide(\var) ) ]
+
+% Fully exogenous update
+%\grad \expect_{\guide(\var)} [ f(\var) ] &= \grad \int \guide(\var) f(\var) d\var \\
+%&= \grad \int \tguide(\tvar) f(\transform(\tvar)) d\tvar \\
+%&= \expect_{\tguide(\tvar)} [ \grad f(\transform(\tvar)) ] \\
+%&= \expect_{\tguide(\tvar)} [ \grad ( \log \target(\transform(\tvar)) - \log \tguide(\tvar) ) ] \\
+%&= \expect_{\tguide(\tvar)} [ \grad \log \target(\transform(\tvar)) ]
+
+% Exogenous with final 'visible' layer of non-exogenous variables
+%\grad \expect_{\guide(\vvar, \var)} [ f(\vvar, \var) ] &= \grad \int \int \guide(\vvar, \var) f(\vvar, \var) d\vvar d\var \\
+%&= \grad \int \int \tvguide(\vvar, \tvar) f(\vvar, \transform(\tvar)) d\var d\tvar \\
+%&= \int \int \grad (\tvguide(\vvar, \tvar) f(\vvar, \transform(\tvar))) d\var d\tvar \\
+%&= \int \int \grad \tvguide(\vvar, \tvar) f(\vvar, \transform(\tvar)) d\var d\tvar +  \int \int \tvguide(\vvar, \tvar) \grad f(\vvar, \transform(\tvar)) d\var d\tvar \\
+%&= \int \int \grad \tvguide(\vvar, \tvar) f(\vvar, \transform(\tvar)) d\var d\tvar +  \int \int \tvguide(\vvar, \tvar) \grad \log \target(\vvar, \transform(\tvar)) d\var d\tvar \\
+%&= \int \int \tvguide(\vvar, \tvar) \grad \log \tvguide(\vvar, \tvar) f(\vvar, \transform(\tvar)) d\var d\tvar +  \int \int \tvguide(\vvar, \tvar) \grad \log \target(\vvar, \transform(\tvar)) d\var d\tvar \\
+%&= \expect_{\tvguide(\vvar, \tvar)} [ \grad \log \tvguide(\vvar, \tvar) f(\vvar, \transform(\tvar)) +  \grad \log \target(\vvar, \transform(\tvar)) ] \\
+%&= \expect_{\tvguide(\vvar, \tvar)} [ \grad \log \tvguide(\vvar, \tvar) ( \log \target(\vvar, \transform(\tvar)) - \log \tvguide(\vvar, \tvar) ) +  \grad \log \target(\vvar, \transform(\tvar)) ]
