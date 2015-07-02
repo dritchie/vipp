@@ -201,6 +201,7 @@ var d_leq = overloader_2cmp(f_leq);
 
 
 var d_floor = lift_real_to_real(Math.floor, zeroF);
+var d_ceil = lift_realreal_to_real(Math.ceil, zeroF);
 //// Switch to support higher-order derivatives
 var d_sqrt = lift_real_to_real(Math.sqrt, function(x){return 1/(2*Math.sqrt(x))});
 var d_exp = lift_real_to_real(Math.exp, function(x){return Math.exp(x)});
@@ -229,6 +230,18 @@ var d_atan_core = lift_realreal_to_real(Math.atan2,
 var d_atan = function(x1, x2) {
   x2 = x2 === undefined ? 1 : x2; // just atan, not atan2
   return d_atan_core(x1, x2);
+};
+
+var d_abs = function(x) {
+  return d_lt(x, 0.0) ? d_sub(0.0, x) : x;
+};
+
+var d_min = function(x, y) {
+  return d_lt(x, y) ? x : y;
+};
+
+var d_max = function(x, y) {
+  return d_lt(x, y) ? y : x;
 };
 
 
@@ -286,7 +299,7 @@ module.exports = {
 };
 
 // Also expose functions via the Math module
-// TODO: ceil, tan, hyperbolic trig fns, abs, min(?), max(?)
+// TODO: tan, hyperbolic trig fns
 var d_Math = {};
 var mathProps = Object.getOwnPropertyNames(Math);
 for (var i = 0; i < mathProps.length; i++) {
@@ -294,6 +307,7 @@ for (var i = 0; i < mathProps.length; i++) {
   d_Math[prop] = Math[prop];
 }
 d_Math.floor = d_floor;
+d_Math.ceil = d_ceil;
 d_Math.sqrt = d_sqrt;
 d_Math.exp = d_exp;
 d_Math.log = d_log;
@@ -302,6 +316,9 @@ d_Math.sin = d_sin;
 d_Math.cos = d_cos;
 d_Math.atan = d_atan;
 d_Math.atan2 = d_atan;
+d_Math.abs = d_abs;
+d_Math.min = d_min;
+d_Math.max = d_max;
 module.exports.ad_Math = d_Math;
 
 
