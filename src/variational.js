@@ -2,6 +2,7 @@
 
 var numeric = require('numeric');
 var present = require('present');
+var assert = require('assert');
 
 // Get the primal value of a dual number/tape
 function primal(x) {
@@ -143,6 +144,8 @@ function infer(target, guide, args, opts) {
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
 			var scoreDiff = targetScore - guideScore;
+			assert(isFinite(scoreDiff),
+				'Detected non-finite score(s)! ERP params have probably moved outside their support...');
 			sumScoreDiff += scoreDiff;
 			var weightedGrad = numeric.mul(grad, scoreDiff);
 			if (verbosity > 4) {
@@ -179,6 +182,8 @@ function infer(target, guide, args, opts) {
 			var grad = elboGradEst[i] / nSamples;
 			runningG2[i] += grad*grad;
 			var weight = learnRate / Math.sqrt(runningG2[i]);
+			assert(isFinite(weight),
+				'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
 			var delta = weight * grad;
 			params[i] += delta;
 			maxDelta = Math.max(Math.abs(delta), maxDelta);

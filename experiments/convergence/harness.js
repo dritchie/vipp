@@ -67,6 +67,15 @@ function runExperiment(modelFileName, conditions, options) {
 		fs.closeSync(stepFile);
 }
 
+// Run a thunk until it doesn't throw an exception.
+function untilSuccess(fn) {
+	while (true) {
+		try {
+			return fn();
+		} catch (e) {}
+	}
+}
+
 function runCondition(code, condition) {
 	// Set up
 	var old__options = global.__options;
@@ -82,7 +91,7 @@ function runCondition(code, condition) {
 	var suffix = '\nreturn infer(target,' + condition.guide + ', __args, __options);\n';
 	code = code + suffix;
 	var fn = vipp.compile(code, false);
-	var ret = fn();
+	var ret = untilSuccess(fn);
 	// Clean up
 	global.__options = old__options;
 	for (var vname in oldVars) {
