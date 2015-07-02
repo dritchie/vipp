@@ -144,8 +144,6 @@ function infer(target, guide, args, opts) {
 			vco.rerun(targetThunk);
 			var targetScore = vco.score;
 			var scoreDiff = targetScore - guideScore;
-			assert(isFinite(scoreDiff),
-				'Detected non-finite score(s)! ERP params have probably moved outside their support...');
 			sumScoreDiff += scoreDiff;
 			var weightedGrad = numeric.mul(grad, scoreDiff);
 			if (verbosity > 4) {
@@ -154,6 +152,8 @@ function infer(target, guide, args, opts) {
 				console.log('    grad: ' + grad.toString());
 				console.log('    weightedGrad: ' + weightedGrad.toString());
 			}
+			assert(isFinite(scoreDiff),
+				'Detected non-finite score(s)! ERP params have probably moved outside their support...');
 			numeric.addeq(sumGrad, grad);
 			numeric.addeq(sumWeightedGrad, weightedGrad);
 			numeric.poweq(grad, 2);	// grad is now gradSq
@@ -236,7 +236,7 @@ function param(params, initialVal, ERP, hypers, prior) {
 	var p = params[coroutine.paramIndex];
 	coroutine.paramIndex++;
 	if (prior)
-		factor(ERP.score(hypers, p));
+		factor(ERP.adscore(hypers, p));
 	return p;
 }
 
