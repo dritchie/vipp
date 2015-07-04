@@ -12,7 +12,8 @@
     "underscore": "^1.8.3",
     "sweet.js": "^0.7.1",
     "brfs": "^1.4.0",
-    "present": "^0.0.6"
+    "present": "^0.0.6",
+    "canvas": "^1.2.3"
   },
   "bugs": {
     "url": "https://github.com/dritchie/vipp/issues"
