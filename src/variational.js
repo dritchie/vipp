@@ -44,75 +44,10 @@ function infer(target, guide, args, opts) {
 	var verbosity = opt(opts.verbosity, 0);
 	var recordStepStats = opt(opts.recordStepStats, false);
 
-	// Define the inference coroutine
-	var vco = {
-		erpScoreRaw: function(erp, params, val) {
-			this.score += erp.score(params, val);
-		},
-		erpScoreAD: function(erp, params, val) {
-			this.score = ad_add(this.score, erp.adscore(params, val));
-		},
-		sample: function(erp, params) {
-			var val = this.choices[this.choiceIndex];
-			if (val === undefined) {
-				// We don't store tapes in the trace, just raw numbers, so that
-				//    re-running with the target program works correctly.
-				var pparams = params.map(function(x) { return primal(x); });
-				val = erp.sample(pparams);
-				this.choices.push(val);
-			}
-			this.erpScore(erp, params, val);
-			this.choiceIndex++;
-			return val;
-		},
-		factorRaw: function(num) {
-			this.score += num;
-		},
-		factorAD: function(num) {
-			this.score = ad_add(this.score, num);
-		},
-		run: function(thunk, ad) {
-			this.choices = [];
-			return this.rerun(thunk, ad);
-		},
-		rerun: function(thunk, ad) {
-			this.paramIndex = 0;
-			this.choiceIndex = 0;
-			this.score = 0;
-			this.erpScore = (ad ? this.erpScoreAD : this.erpScoreRaw);
-			this.factor = (ad ? this.factorAD : this.factorRaw);
-			return thunk();
-		}
-	}
-
-	// Install coroutine
-	var oldCoroutine = coroutine;
-	coroutine = vco;
-
 	var params = [];
 
-	// Thunks that we'll feed to 'run' and 'rerun'
-	var targetThunk = function() {
-		return target(args);
-	}
 	var guideThunk = function() {
 		return guide(params, args);
-	}
-	var guideGrad = ad_gradientR(function(p) {
-		guide(p, args);
-		return vco.score;
-	})
-	var guideGradThunk = function() {
-		return guideGrad(params);
-	}
-
-	// Prep stats, if requeste
-	var stepStats = null;
-	if (recordStepStats) {
-		stepStats = {
-			time: [],
-			elbo: []
-		};
 	}
 
 	var tStart = present();
@@ -215,37 +150,9 @@ function infer(target, guide, args, opts) {
 	return ret;
 }
 
-function sample(erp, params) {
-	return coroutine.sample(erp, params);
-}
-
-function factor(num) {
-	coroutine.factor(num);
-}
-
-// Create/lookup a param.
-// May have an initial val, as well as an ERP.
-// The ERP may be used to sample an initial val (if 'initialVal' is undefined).
-// The ERP may also be used a prior score (if 'prior' is true).
-function param(params, initialVal, ERP, hypers, prior) {
-	if (coroutine.paramIndex == params.length) {
-		if (initialVal === undefined)
-			initialVal = ERP.sample(hypers);
-		params.push(primal(initialVal));
-	}
-	var p = params[coroutine.paramIndex];
-	coroutine.paramIndex++;
-	if (prior)
-		factor(ERP.adscore(hypers, p));
-	return p;
-}
-
 module.exports = {
 	run: run,
-	infer: infer,
-	sample: sample,
-	factor: factor,
-	param: param
+	infer: infer
 };
 
 
