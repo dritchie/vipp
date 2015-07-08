@@ -43,6 +43,32 @@ function infer(target, guide, args, opts) {
 	var convergeEps = opt(opts.convergeEps, 0.1);
 	var verbosity = opt(opts.verbosity, 0);
 	var recordStepStats = opt(opts.recordStepStats, false);
+	var regularize = opt(opts.regularize, undefined);
+
+	// Define the regularizer for variational parameters
+	if (regularize !== undefined) {
+		var rweight = regularize.weight;
+		if (regularize.method === 'L2') {
+			regularize = function(p0, p1, learningRate) {
+				return p1 - learningRate * rweight * p0;
+			};
+		} else
+		if (regularize.method === 'L1') {
+			// 'Clipped' L1 regularization for stochastic gradient descent.
+			// Sources:
+			// https://lingpipe.files.wordpress.com/2008/04/lazysgdregression.pdf
+			// http://aclweb.org/anthology/P/P09/P09-1054.pdf
+			regularize = function(p0, p1, learningRate) {
+				if (p1 > 0.0) {
+					return Math.max(0.0, p1 - rweight * learningRate);
+				}
+				else if (p1 < 0.0) {
+					return Math.min(0.0, p1 + rweight * learningRate);
+				}
+				else return p1;
+			}
+		}
+	} else regularize = function(p0, p1, learningRate) { return p1; };
 
 	// Define the inference coroutine
 	var vco = {
@@ -185,7 +211,9 @@ function infer(target, guide, args, opts) {
 			assert(isFinite(weight),
 				'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
 			var delta = weight * grad;
-			params[i] += delta;
+			var p0 = params[i];
+			var p1 = p0 + delta;
+			params[i] = regularize(p0, p1, weight);
 			maxDelta = Math.max(Math.abs(delta), maxDelta);
 		}
 		// Check for convergence
