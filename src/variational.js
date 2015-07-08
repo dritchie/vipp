@@ -224,19 +224,16 @@ function factor(num) {
 }
 
 // Create/lookup a param.
-// May have an initial val, as well as an ERP.
-// The ERP may be used to sample an initial val (if 'initialVal' is undefined).
-// The ERP may also be used a prior score (if 'prior' is true).
-function param(params, initialVal, ERP, hypers, prior) {
+// May have an initial val, as well as a random sampler.
+// The sampler may be used to sample an initial val (if 'initialVal' is undefined).
+function param(params, initialVal, sampler, hypers) {
 	if (coroutine.paramIndex == params.length) {
 		if (initialVal === undefined)
-			initialVal = ERP.sample(hypers);
+			initialVal = sampler(hypers);
 		params.push(primal(initialVal));
 	}
 	var p = params[coroutine.paramIndex];
 	coroutine.paramIndex++;
-	if (prior)
-		factor(ERP.adscore(hypers, p));
 	return p;
 }
 
