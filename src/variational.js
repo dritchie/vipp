@@ -3,6 +3,7 @@
 var numeric = require('numeric');
 var present = require('present');
 var assert = require('assert');
+var _ = require('underscore');
 
 // Get the primal value of a dual number/tape
 function primal(x) {
@@ -71,12 +72,17 @@ function infer(target, guide, args, opts) {
 	} else regularize = function(p0, p1, learningRate) { return p1; };
 
 	// Define the inference coroutine
-	var vco = {
+	function Trace() {};
+	Trace.prototype = {
 		erpScoreRaw: function(erp, params, val) {
-			this.score += erp.score(params, val);
+			var score = erp.score(params, val);
+			this.score += score;
+			return score;
 		},
 		erpScoreAD: function(erp, params, val) {
-			this.score = ad_add(this.score, erp.adscore(params, val));
+			var score = erp.adscore(params, val);
+			this.score = ad_add(this.score, score);
+			return score;
 		},
 		sample: function(erp, params) {
 			var val = this.choices[this.choiceIndex];
@@ -86,8 +92,10 @@ function infer(target, guide, args, opts) {
 				var pparams = params.map(function(x) { return primal(x); });
 				val = erp.sample(pparams);
 				this.choices.push(val);
+				this.choiceInfo.push({ erp: erp, params: params, score: 0.0 });
 			}
-			this.erpScore(erp, params, val);
+			var score = this.erpScore(erp, params, val);
+			this.choiceInfo[this.choiceIndex].score = score;
 			this.choiceIndex++;
 			return val;
 		},
@@ -99,6 +107,7 @@ function infer(target, guide, args, opts) {
 		},
 		run: function(thunk, ad) {
 			this.choices = [];
+			this.choiceInfo = [];
 			return this.rerun(thunk, ad);
 		},
 		rerun: function(thunk, ad) {
@@ -108,12 +117,38 @@ function infer(target, guide, args, opts) {
 			this.erpScore = (ad ? this.erpScoreAD : this.erpScoreRaw);
 			this.factor = (ad ? this.factorAD : this.factorRaw);
 			return thunk();
+		},
+		mhstep: function(thunk, ad) {
+			// Make proposal
+			var i = Math.floor(Math.random()*this.choices.length);
+			var info = this.choiceInfo[i];
+			var currval = this.choices[i];
+			var rvsLP = info.score;
+			var newval = info.erp.sample(info.params);
+			var fwdLP = info.erp.score(params, newval);
+			this.choices[i] = newval;
+
+			// Run trace update
+			var oldChoices = _.clone(this.choices);
+			var oldChoiceInfo = _.clone(this.choiceInfo);
+			var oldScore = this.score;
+			var ret = this.rerun(thunk, ad);
+
+			// Accept/reject
+			var acceptThresh = Math.min(1.0, Math.exp(this.score - oldScore + rvsLP - fwdLP));
+			if (Math.random() < acceptThresh) {
+				this.choices = oldChoices;
+				this.choiceInfo = oldChoiceInfo;
+				this.score = oldScore;
+			}
+
+			return ret;
 		}
 	}
 
 	// Install coroutine
 	var oldCoroutine = coroutine;
-	coroutine = vco;
+	coroutine = new Trace();
 
 	var params = [];
 
@@ -126,13 +161,13 @@ function infer(target, guide, args, opts) {
 	}
 	var guideGrad = ad_gradientR(function(p) {
 		guide(p, args);
-		return vco.score;
+		return coroutine.score;
 	})
 	var guideGradThunk = function() {
 		return guideGrad(params);
 	}
 
-	// Prep stats, if requeste
+	// Prep step stats, if requested
 	var stepStats = null;
 	if (recordStepStats) {
 		stepStats = {
@@ -141,34 +176,22 @@ function infer(target, guide, args, opts) {
 		};
 	}
 
-	var tStart = present();
-
-	// Run guide once to initialize vector of params
-	// TODO: This will not work if params has variable size--we'll need to
-	//    adopt a different strategy then.
-	vco.run(guideThunk);
-	// Do variational inference
-	var currStep = 0;
-	var maxDeltaAvg = 0;
-	var runningG2 = numeric.rep([params.length], 0);
-	do {
-		if (verbosity > 1)
-			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
-		if (verbosity > 2)
-			console.log('  params: ' + params.toString());
-		// Estimate learning signal with guide samples
+	// Estimate the parameter gradient using the ELBO
+	var estimateGradientELBO = function() {
+		// Initialize accumulators
 		var sumGrad = numeric.rep([params.length], 0);
 		var sumGradSq = numeric.rep([params.length], 0);
 		var sumWeightedGrad = numeric.rep([params.length], 0);
 		var sumWeightedGradSq = numeric.rep([params.length], 0);
 		var sumScoreDiff = 0.0;
+		// Draw samples from the guide, score using the target
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
-			var grad = vco.run(guideGradThunk, true);
-			var guideScore = primal(vco.score);
-			vco.rerun(targetThunk);
-			var targetScore = vco.score;
+			var grad = coroutine.run(guideGradThunk, true);
+			var guideScore = primal(coroutine.score);
+			coroutine.rerun(targetThunk);
+			var targetScore = coroutine.score;
 			var scoreDiff = targetScore - guideScore;
 			sumScoreDiff += scoreDiff;
 			var weightedGrad = numeric.mul(grad, scoreDiff);
@@ -198,14 +221,44 @@ function infer(target, guide, args, opts) {
 		var aStar = numeric.div(sumWeightedGradSq, sumGradSq);
 		numeric.muleq(aStar, sumGrad);
 		var elboGradEst = numeric.sub(sumWeightedGrad, aStar);
+		numeric.muleq(elboGradEst, 1.0/nSamples);
 		if (verbosity > 2) {
 			console.log('  sumGrad: ' +  sumGrad.toString());
 			console.log('  sumWeightedGrad: ' +  sumWeightedGrad.toString());
 			console.log('  elboGradEst: ' +  elboGradEst.toString());
 		}
+		return {
+			grad: elboGradEst,
+			elbo: elboEst
+		};
+	}
+
+	// Estimate the parameter gradient using the EUBO
+	var estimateGradientEUBO = function() {
+		// TODO: Fill this in
+	}
+
+	var tStart = present();
+
+	// Run guide once to initialize vector of params
+	// TODO: This will not work if params has variable size--we'll need to
+	//    adopt a different strategy then.
+	coroutine.run(guideThunk);
+	// Do variational inference
+	var currStep = 0;
+	var maxDeltaAvg = 0;
+	var runningG2 = numeric.rep([params.length], 0);
+	do {
+		if (verbosity > 1)
+			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
+		if (verbosity > 2)
+			console.log('  params: ' + params.toString());
+		var est = estimateGradientELBO();
+		var gradEst = est.grad;
+		var elboEst= est.elbo;
 		var maxDelta = 0;
 		for (var i = 0; i < params.length; i++) {
-			var grad = elboGradEst[i] / nSamples;
+			var grad = gradEst[i];
 			runningG2[i] += grad*grad;
 			var weight = learnRate / Math.sqrt(runningG2[i]);
 			assert(isFinite(weight),

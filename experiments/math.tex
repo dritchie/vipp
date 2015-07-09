@@ -50,13 +50,18 @@
 KL(\guide, \target) &= \int \guide(\var) \log \frac{\guide(\var)}{\target(\var)}d\var \\
 &= \int \guide(\var) \log \frac{\guide(\var)}{\frac{1}{Z} \unnormTarget(\var)}d\var \\
 &= \int \guide(\var) \log \frac{\guide(\var)}{\unnormTarget(\var)}d\var + \log Z \\
-&= -\expect_{\guide(\var)} [ \log \target(\var) - \log \guide(\var) ] + \log Z \\
+&= \expect_{\guide(\var)} [ \log \guide(\var) - \log \unnormTarget(\var) ] + \log Z \\
+&= -\expect_{\guide(\var)} [ \log \unnormTarget(\var) - \log \guide(\var) ] + \log Z \\
 &= -\text{ELBO}(\guide, \target) + \log Z
 
 % EUBO derivation
 KL(\target, \guide) &= \int \target(\var) \log \frac{\target(\var)}{\guide(\var)}d\var \\
 &= \int \target(\var) \log \frac{\frac{1}{Z} \unnormTarget(\var)}{\guide(\var)}d\var \\
-&= \int \guide(\var) \log \frac{\unnormTarget(\var)}{\guide(\var)}d\var - \log Z \\
-&= \expect_{\target(\var)} [ \log \target(\var) - \log \guide(\var) ] - \log Z \\
+&= \int \target(\var) \log \frac{\unnormTarget(\var)}{\guide(\var)}d\var - \log Z \\
+&= \expect_{\target(\var)} [ \log \unnormTarget(\var) - \log \guide(\var) ] - \log Z \\
 &= \text{EUBO}(\guide, \target) - \log Z
 
+% Derivation of the EUBO gradient
+\grad \text{EUBO}(\guide, \target) &= \grad \expect_{\target(\var)} [ \log \unnormTarget(\var) - \log \guide(\var) ] \\
+&= \expect_{\target(\var)} [ \grad (\log \unnormTarget(\var) - \log \guide(\var) ) ] \\
+&= \expect_{\target(\var)} [ \grad \log \guide(\var) ]
