@@ -64,4 +64,4 @@ KL(\target, \guide) &= \int \target(\var) \log \frac{\target(\var)}{\guide(\var)
 % Derivation of the EUBO gradient
 \grad \text{EUBO}(\guide, \target) &= \grad \expect_{\target(\var)} [ \log \unnormTarget(\var) - \log \guide(\var) ] \\
 &= \expect_{\target(\var)} [ \grad (\log \unnormTarget(\var) - \log \guide(\var) ) ] \\
-&= \expect_{\target(\var)} [ \grad \log \guide(\var) ]
+&= -\expect_{\target(\var)} [ \grad \log \guide(\var) ]
