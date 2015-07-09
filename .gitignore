@@ -1,5 +1,6 @@
 node_modules
 sandbox/*
 erp_scorers.js
-experiments/**/*.csv
-
+experiments/adTest/*.csv
+experiments/convergence/*.csv
+*.png

@@ -177,13 +177,18 @@ function infer(target, guide, args, opts) {
 	}
 
 	// Estimate the parameter gradient using the ELBO
-	var estimateGradientELBO = function() {
+	var estimateGradientELBO = function(useEmpiricalMeans, componentWiseAStar) {
 		// Initialize accumulators
-		var sumGrad = numeric.rep([params.length], 0);
-		var sumGradSq = numeric.rep([params.length], 0);
-		var sumWeightedGrad = numeric.rep([params.length], 0);
-		var sumWeightedGradSq = numeric.rep([params.length], 0);
+		var sumGrad = numeric.rep([params.length], 0.0);
+		var sumWeightedGrad = numeric.rep([params.length], 0.0);
 		var sumScoreDiff = 0.0;
+		if (!useEmpiricalMeans) {
+			var sumWeightedGradSq = numeric.rep([params.length], 0.0);
+			var sumGradSq = numeric.rep([params.length], 0.0);
+		} else {
+			var gradSamps = [];
+			var weightedGradSamps = [];
+		}
 		// Draw samples from the guide, score using the target
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
@@ -205,22 +210,50 @@ function infer(target, guide, args, opts) {
 				'Detected non-finite score(s)! ERP params have probably moved outside their support...');
 			numeric.addeq(sumGrad, grad);
 			numeric.addeq(sumWeightedGrad, weightedGrad);
-			numeric.poweq(grad, 2);	// grad is now gradSq
-			numeric.addeq(sumGradSq, grad);
-			var weightedGradSq = numeric.mul(grad, scoreDiff)
-			numeric.addeq(sumWeightedGradSq, weightedGradSq);
+			if (!useEmpiricalMeans) {
+				numeric.poweq(grad, 2);	// grad is now gradSq
+				numeric.addeq(sumGradSq, grad);
+				var weightedGradSq = numeric.mul(grad, scoreDiff)
+				numeric.addeq(sumWeightedGradSq, weightedGradSq);
+			} else {
+				gradSamps.push(grad);
+				weightedGradSamps.push(weightedGrad);
+			}
+		}
+		if (!useEmpiricalMeans) {
+			var covarVec = sumWeightedGradSq;
+			var varVec = sumGradSq;
+		} else {
+			var gradMean = numeric.div(sumGrad, nSamples);
+			var weightedGradMean = numeric.div(sumWeightedGrad, nSamples);
+			var gradVar = numeric.rep([params.length], 0.0);
+			var covar = numeric.rep([params.length], 0.0);
+			for (var s = 0; s < nSamples; s++) {
+				var normGrad = numeric.sub(gradSamps[s], gradMean);
+				numeric.addeq(gradVar, numeric.mul(normGrad, normGrad));
+				var normWeightedGrad = numeric.sub(weightedGradSamps[s], weightedGradMean);
+				numeric.addeq(covar, numeric.mul(normGrad, normWeightedGrad));
+			}
+			// Not sure about these...
+			numeric.diveq(gradVar, nSamples);
+			numeric.diveq(covar, nSamples);
+			var covarVec = covar;
+			var varVec = gradVar;
 		}
 		var elboEst = sumScoreDiff / nSamples;
-		// Record some statistics, if requested
-		if (recordStepStats) {
-			stepStats.time.push((present() - tStart)/1000);
-			stepStats.elbo.push(elboEst);
-		}
 		// Compute AdaGrad learning rate and control variate,
 		//    then do parameter update
-		var aStar = numeric.div(sumWeightedGradSq, sumGradSq);
-		numeric.muleq(aStar, sumGrad);
-		var elboGradEst = numeric.sub(sumWeightedGrad, aStar);
+		if (componentWiseAStar) {
+			var aStar = numeric.div(covarVec, varVec);
+			numeric.muleq(aStar, sumGrad);
+			var elboGradEst = numeric.sub(sumWeightedGrad, aStar);
+		} else {
+			var numerSum = numeric.sum(covarVec);
+			var denomSum = numeric.sum(varVec);
+			var aStar = numerSum / denomSum;
+			var offset = numeric.mul(sumGrad, aStar);
+			var elboGradEst = numeric.sub(sumWeightedGrad, offset);
+		}
 		numeric.muleq(elboGradEst, 1.0/nSamples);
 		if (verbosity > 2) {
 			console.log('  sumGrad: ' +  sumGrad.toString());
@@ -246,16 +279,21 @@ function infer(target, guide, args, opts) {
 	coroutine.run(guideThunk);
 	// Do variational inference
 	var currStep = 0;
-	var maxDeltaAvg = 0;
-	var runningG2 = numeric.rep([params.length], 0);
+	var maxDeltaAvg = 0.0;
+	var runningG2 = numeric.rep([params.length], 0.0);
 	do {
 		if (verbosity > 1)
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
 		if (verbosity > 2)
 			console.log('  params: ' + params.toString());
-		var est = estimateGradientELBO();
+		var est = estimateGradientELBO(false, false);
 		var gradEst = est.grad;
-		var elboEst= est.elbo;
+		var elboEst = est.elbo;
+		// Record some statistics, if requested
+		if (recordStepStats) {
+			stepStats.time.push((present() - tStart)/1000);
+			stepStats.elbo.push(elboEst);
+		}
 		var maxDelta = 0;
 		for (var i = 0; i < params.length; i++) {
 			var grad = gradEst[i];
