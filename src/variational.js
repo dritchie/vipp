@@ -95,7 +95,7 @@ function infer(target, guide, args, opts) {
 				this.choiceInfo.push({ erp: erp, params: params, score: 0.0 });
 			}
 			var score = this.erpScore(erp, params, val);
-			this.choiceInfo[this.choiceIndex].score = score;
+			this.choiceInfo[this.choiceIndex] = { erp: erp, params: params, score: score };
 			this.choiceIndex++;
 			return val;
 		},
@@ -116,39 +116,49 @@ function infer(target, guide, args, opts) {
 			this.score = 0;
 			this.erpScore = (ad ? this.erpScoreAD : this.erpScoreRaw);
 			this.factor = (ad ? this.factorAD : this.factorRaw);
-			return thunk();
+			var oldCoroutine = coroutine;
+			coroutine = this;
+			this.returnVal = thunk();
+			coroutine = oldCoroutine
+			return this.returnVal;
 		},
 		mhstep: function(thunk, ad) {
 			// Make proposal
-			var i = Math.floor(Math.random()*this.choices.length);
-			var info = this.choiceInfo[i];
-			var currval = this.choices[i];
+			var cindex = Math.floor(Math.random()*this.choices.length);
+			var info = this.choiceInfo[cindex];
+			var currval = this.choices[cindex];
 			var rvsLP = info.score;
 			var newval = info.erp.sample(info.params);
-			var fwdLP = info.erp.score(params, newval);
-			this.choices[i] = newval;
+			var fwdLP = info.erp.score(info.params, newval);
 
 			// Run trace update
 			var oldChoices = _.clone(this.choices);
 			var oldChoiceInfo = _.clone(this.choiceInfo);
 			var oldScore = this.score;
-			var ret = this.rerun(thunk, ad);
+			var oldRetVal = this.returnVal;
+			this.choices[cindex] = newval;
+			this.rerun(thunk, ad);
 
 			// Accept/reject
-			var acceptThresh = Math.min(1.0, Math.exp(this.score - oldScore + rvsLP - fwdLP));
-			if (Math.random() < acceptThresh) {
+			var acceptProb = Math.min(1.0, Math.exp(this.score - oldScore + rvsLP - fwdLP));
+			// console.log('-----------------');
+			// console.log('newScore: ' + this.score + ', oldScore: ' + oldScore);
+			// console.log('fwdLP: ' + fwdLP + ', rvsLP: ' + rvsLP);
+			// console.log('acceptProb: ', acceptProb);
+			if (Math.random() < acceptProb) {
+				// console.log('ACCEPT');
+			} else {
+				// console.log('REJECT');
 				this.choices = oldChoices;
 				this.choiceInfo = oldChoiceInfo;
 				this.score = oldScore;
+				this.returnVal = oldRetVal;
 			}
-
-			return ret;
 		}
 	}
 
-	// Install coroutine
-	var oldCoroutine = coroutine;
-	coroutine = new Trace();
+	// Default trace
+	var trace = new Trace();
 
 	var params = [];
 
@@ -193,10 +203,10 @@ function infer(target, guide, args, opts) {
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
-			var grad = coroutine.run(guideGradThunk, true);
-			var guideScore = primal(coroutine.score);
-			coroutine.rerun(targetThunk);
-			var targetScore = coroutine.score;
+			var grad = trace.run(guideGradThunk, true);
+			var guideScore = primal(trace.score);
+			trace.rerun(targetThunk);
+			var targetScore = trace.score;
 			var scoreDiff = targetScore - guideScore;
 			sumScoreDiff += scoreDiff;
 			var weightedGrad = numeric.mul(grad, scoreDiff);
@@ -267,8 +277,46 @@ function infer(target, guide, args, opts) {
 	}
 
 	// Estimate the parameter gradient using the EUBO
+	var nChains = 1;
+	var burnIn = 500;
+	var lag = 10;
+	var chains = [];
 	var estimateGradientEUBO = function() {
-		// TODO: Fill this in
+		if (chains.length === 0) {
+			// Initialize MH chains
+			for (var i = 0; i < nChains; i++) {
+				var tr = new Trace();
+				tr.run(targetThunk);
+				for (var j = 0; j < burnIn; j++)
+					tr.mhstep(targetThunk);
+				chains.push(tr);
+			}
+		}
+		var gradEst = numeric.rep([params.length], 0.0);
+		var sumScoreDiff = 0.0;
+		for (var s = 0; s < nSamples; s++) {
+			// Pick a chain at random
+			var chain = chains[Math.floor(Math.random()*nChains)];
+			for (var l = 0; l < lag; l++)
+				chain.mhstep(targetThunk);
+			var targetScore = chain.score;
+			// Save the choices + choiceInfo so we can restore them after the AD gradient run
+			var choices = _.clone(chain.choices);
+			var choiceInfo = _.clone(chain.choiceInfo);
+			var gradient = chain.rerun(guideGradThunk, true);
+			var guideScore = primal(chain.score);
+			chain.score = targetScore;
+			chain.choices = choices;
+			chain.choiceInfo = choiceInfo;
+			sumScoreDiff += (targetScore - guideScore);
+			numeric.addeq(gradEst, gradient);
+		}
+		var euboEst = sumScoreDiff / nSamples;
+		numeric.diveq(gradEst, nSamples);
+		return {
+			elbo: euboEst,	// Really should name this properly...
+			grad: gradEst
+		}
 	}
 
 	var tStart = present();
@@ -276,7 +324,7 @@ function infer(target, guide, args, opts) {
 	// Run guide once to initialize vector of params
 	// TODO: This will not work if params has variable size--we'll need to
 	//    adopt a different strategy then.
-	coroutine.run(guideThunk);
+	trace.run(guideThunk);
 	// Do variational inference
 	var currStep = 0;
 	var maxDeltaAvg = 0.0;
@@ -286,7 +334,8 @@ function infer(target, guide, args, opts) {
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
 		if (verbosity > 2)
 			console.log('  params: ' + params.toString());
-		var est = estimateGradientELBO(false, false);
+		// var est = estimateGradientELBO(false, false);
+		var est = estimateGradientEUBO();
 		var gradEst = est.grad;
 		var elboEst = est.elbo;
 		// Record some statistics, if requested
@@ -320,9 +369,6 @@ function infer(target, guide, args, opts) {
 			console.log('DID NOT CONVERGE (' + maxDeltaAvg + ' > ' + convergeEps + ')');
 	}
 
-	// Restore original coroutine
-	oldCoroutine = oldCoroutine;
-
 	var ret = {
 		converged: converged,
 		stepsTaken: currStep,
@@ -332,6 +378,13 @@ function infer(target, guide, args, opts) {
 	};
 	if (recordStepStats) ret.stepStats = stepStats;
 	return ret;
+
+	// // Testing out MH
+	// trace.run(targetThunk);
+	// for (var i = 0; i < 1000; i++) {
+	// 	trace.mhstep(targetThunk);
+	// }
+	// return trace.returnVal;
 }
 
 function sample(erp, params) {
