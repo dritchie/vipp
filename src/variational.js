@@ -278,7 +278,7 @@ function infer(target, guide, args, opts) {
 
 	// Estimate the parameter gradient using the EUBO
 	var nChains = 1;
-	var burnIn = 500;
+	var burnIn = 1000;
 	var lag = 10;
 	var chains = [];
 	var estimateGradientEUBO = function() {
@@ -295,10 +295,12 @@ function infer(target, guide, args, opts) {
 		var gradEst = numeric.rep([params.length], 0.0);
 		var sumScoreDiff = 0.0;
 		for (var s = 0; s < nSamples; s++) {
+			if (verbosity > 3)
+				console.log('  Sample ' + s + '/' + nSamples);
 			// Pick a chain at random
 			var chain = chains[Math.floor(Math.random()*nChains)];
-			for (var l = 0; l < lag; l++)
-				chain.mhstep(targetThunk);
+			// for (var l = 0; l < lag; l++)
+			// 	chain.mhstep(targetThunk);
 			var targetScore = chain.score;
 			// Save the choices + choiceInfo so we can restore them after the AD gradient run
 			var choices = _.clone(chain.choices);
@@ -308,11 +310,20 @@ function infer(target, guide, args, opts) {
 			chain.score = targetScore;
 			chain.choices = choices;
 			chain.choiceInfo = choiceInfo;
-			sumScoreDiff += (targetScore - guideScore);
+			var scoreDiff = targetScore - guideScore;
+			if (verbosity > 4) {
+				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
+					+ ', diff: ' + scoreDiff);
+				console.log('    grad: ' + grad.toString());
+			}
+			sumScoreDiff += scoreDiff;
 			numeric.addeq(gradEst, gradient);
 		}
 		var euboEst = sumScoreDiff / nSamples;
 		numeric.diveq(gradEst, nSamples);
+		if (verbosity > 2) {
+			console.log('  gradEst: ' +  gradEst.toString());
+		}
 		return {
 			elbo: euboEst,	// Really should name this properly...
 			grad: gradEst
