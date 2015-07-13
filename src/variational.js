@@ -45,6 +45,17 @@ function infer(target, guide, args, opts) {
 	var verbosity = opt(opts.verbosity, 0);
 	var recordStepStats = opt(opts.recordStepStats, false);
 	var regularize = opt(opts.regularize, undefined);
+	var gradientOpts = opt(opts.gradientOpts, {
+		estimator: 'ELBO'
+	});
+	if (gradientOpts.estimator !== 'ELBO') {
+		gradientOpts.nChains = opt(gradientOpts.nChains, 1);
+		gradientOpts.burnIn = opt(gradientOpts.burnIn, 1000);
+		gradientOpts.lag = opt(gradientOpts.lag, 0);
+	}
+	if (gradientOpts.estimator === 'ELBO+EUBO') {
+		gradientOpts.mixProb = opt(gradientOpts.mixProb, 0.5);
+	}
 
 	// Define the regularizer for variational parameters
 	if (regularize !== undefined) {
@@ -284,9 +295,9 @@ function infer(target, guide, args, opts) {
 	}
 
 	// Estimate the parameter gradient using the EUBO
-	var nChains = 1;
-	var burnIn = 1000;
-	var lag = 10;
+	var nChains = gradientOpts.nChains;
+	var burnIn = gradientOpts.burnIn;
+	var lag = gradientOpts.lag;
 	var chains = [];
 	var estimateGradientEUBO = function() {
 		if (chains.length === 0) {
@@ -307,8 +318,8 @@ function infer(target, guide, args, opts) {
 				console.log('  Sample ' + s + '/' + nSamples);
 			// Pick a chain at random
 			var chain = chains[Math.floor(Math.random()*nChains)];
-			// for (var l = 0; l < lag; l++)
-			// 	chain.mhstep(targetThunk);
+			for (var l = 0; l < lag; l++)
+				chain.mhstep(targetThunk);
 			var targetScore = chain.score;
 			// Save the choices + choiceInfo so we can restore them after the AD gradient run
 			var choices = _.clone(chain.choices);
@@ -338,6 +349,22 @@ function infer(target, guide, args, opts) {
 		}
 	}
 
+	// Pre-define the function that'll compute the gradient estimator, depending
+	//    upon which method was requested
+	if (gradientOpts.method === 'ELBO') {
+		var estimateGradient = function() { return estimateGradientELBO(false, false); };
+	} else if (gradientOpts.method === 'EUBO') {
+		var estimateGradient = estimateGradientEUBO;
+	} else if (gradientOpts.method == 'ELBO+EUBO') {
+		var mixProb = gradientOpts.mixProb
+		var estimateGradient = function() {
+			if (Math.random() < mixProb)
+				return estimateGradientELBO(false, false);
+			else
+				return estimateGradientEUBO();
+		};
+	}
+
 	var tStart = present();
 
 	// Run guide once to initialize vector of params
@@ -354,8 +381,7 @@ function infer(target, guide, args, opts) {
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
 		if (verbosity > 2)
 			console.log('  params: ' + params.values.toString());
-		var est = estimateGradientELBO(false, false);
-		// var est = estimateGradientEUBO();
+		var est = estimateGradient();
 		var gradEst = est.grad;
 		var elboEst = est.elbo;
 		// Record some statistics, if requested
