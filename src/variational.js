@@ -160,7 +160,10 @@ function infer(target, guide, args, opts) {
 	// Default trace
 	var trace = new Trace();
 
-	var params = [];
+	var params = {
+		values: [],
+		transforms: []
+	}
 
 	// Thunks that we'll feed to 'run' and 'rerun'
 	var targetThunk = function() {
@@ -170,11 +173,14 @@ function infer(target, guide, args, opts) {
 		return guide(params, args);
 	}
 	var guideGrad = ad_gradientR(function(p) {
-		guide(p, args);
+		var oldvals = params.values;
+		params.values = p;
+		guide(params, args);
+		params.values = oldvals;
 		return coroutine.score;
 	})
 	var guideGradThunk = function() {
-		return guideGrad(params);
+		return guideGrad(params.values);
 	}
 
 	// Prep step stats, if requested
@@ -189,12 +195,13 @@ function infer(target, guide, args, opts) {
 	// Estimate the parameter gradient using the ELBO
 	var estimateGradientELBO = function(useEmpiricalMeans, componentWiseAStar) {
 		// Initialize accumulators
-		var sumGrad = numeric.rep([params.length], 0.0);
-		var sumWeightedGrad = numeric.rep([params.length], 0.0);
+		var nParams = params.values.length;
+		var sumGrad = numeric.rep([nParams], 0.0);
+		var sumWeightedGrad = numeric.rep([nParams], 0.0);
 		var sumScoreDiff = 0.0;
 		if (!useEmpiricalMeans) {
-			var sumWeightedGradSq = numeric.rep([params.length], 0.0);
-			var sumGradSq = numeric.rep([params.length], 0.0);
+			var sumWeightedGradSq = numeric.rep([nParams], 0.0);
+			var sumGradSq = numeric.rep([nParams], 0.0);
 		} else {
 			var gradSamps = [];
 			var weightedGradSamps = [];
@@ -236,8 +243,8 @@ function infer(target, guide, args, opts) {
 		} else {
 			var gradMean = numeric.div(sumGrad, nSamples);
 			var weightedGradMean = numeric.div(sumWeightedGrad, nSamples);
-			var gradVar = numeric.rep([params.length], 0.0);
-			var covar = numeric.rep([params.length], 0.0);
+			var gradVar = numeric.rep([nParams], 0.0);
+			var covar = numeric.rep([nParams], 0.0);
 			for (var s = 0; s < nSamples; s++) {
 				var normGrad = numeric.sub(gradSamps[s], gradMean);
 				numeric.addeq(gradVar, numeric.mul(normGrad, normGrad));
@@ -292,7 +299,8 @@ function infer(target, guide, args, opts) {
 				chains.push(tr);
 			}
 		}
-		var gradEst = numeric.rep([params.length], 0.0);
+		var nParams = params.values.length;
+		var gradEst = numeric.rep([nParams], 0.0);
 		var sumScoreDiff = 0.0;
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
@@ -339,14 +347,15 @@ function infer(target, guide, args, opts) {
 	// Do variational inference
 	var currStep = 0;
 	var maxDeltaAvg = 0.0;
-	var runningG2 = numeric.rep([params.length], 0.0);
+	var nParams = params.values.length;
+	var runningG2 = numeric.rep([nParams], 0.0);
 	do {
 		if (verbosity > 1)
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
 		if (verbosity > 2)
-			console.log('  params: ' + params.toString());
-		// var est = estimateGradientELBO(false, false);
-		var est = estimateGradientEUBO();
+			console.log('  params: ' + params.values.toString());
+		var est = estimateGradientELBO(false, false);
+		// var est = estimateGradientEUBO();
 		var gradEst = est.grad;
 		var elboEst = est.elbo;
 		// Record some statistics, if requested
@@ -355,16 +364,21 @@ function infer(target, guide, args, opts) {
 			stepStats.elbo.push(elboEst);
 		}
 		var maxDelta = 0;
-		for (var i = 0; i < params.length; i++) {
+		for (var i = 0; i < nParams; i++) {
 			var grad = gradEst[i];
 			runningG2[i] += grad*grad;
 			var weight = learnRate / Math.sqrt(runningG2[i]);
 			assert(isFinite(weight),
 				'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
 			var delta = weight * grad;
-			var p0 = params[i];
+			var p0 = params.values[i];
 			var p1 = p0 + delta;
-			params[i] = regularize(p0, p1, weight);
+			params.values[i] = regularize(p0, p1, weight);
+			// When recording changes, do this in the transformed space
+			if (params.transforms[i] !== undefined) {
+				var t = params.transforms[i];
+				delta = t(p1) - t(p0);
+			}
 			maxDelta = Math.max(Math.abs(delta), maxDelta);
 		}
 		// Check for convergence
@@ -407,17 +421,23 @@ function factor(num) {
 }
 
 // Create/lookup a param.
-// May have an initial val, as well as a random sampler.
+// May have an initial val, a transform, and  a random sampler.
+// Transform specifies how the value should be transformed.
 // The sampler may be used to sample an initial val (if 'initialVal' is undefined).
-function param(params, initialVal, sampler, hypers) {
-	if (coroutine.paramIndex == params.length) {
+function param(params, initialVal, transform, sampler, hypers) {
+	if (coroutine.paramIndex == params.values.length) {
 		if (initialVal === undefined)
 			initialVal = sampler(hypers);
-		params.push(primal(initialVal));
+		params.values.push(primal(initialVal));
+		params.transforms.push(transform);
 	}
-	var p = params[coroutine.paramIndex];
+	var t = params.transforms[coroutine.paramIndex];
+	var p = params.values[coroutine.paramIndex];
 	coroutine.paramIndex++;
-	return p;
+	if (t !== undefined)
+		return t(p);
+	else
+		return p;
 }
 
 module.exports = {
