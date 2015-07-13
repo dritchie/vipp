@@ -324,11 +324,13 @@ function infer(target, guide, args, opts) {
 			// Save the choices + choiceInfo so we can restore them after the AD gradient run
 			var choices = _.clone(chain.choices);
 			var choiceInfo = _.clone(chain.choiceInfo);
+			var retVal = chain.returnVal;
 			var gradient = chain.rerun(guideGradThunk, true);
 			var guideScore = primal(chain.score);
 			chain.score = targetScore;
 			chain.choices = choices;
 			chain.choiceInfo = choiceInfo;
+			chain.returnVal = retVal;
 			var scoreDiff = targetScore - guideScore;
 			if (verbosity > 4) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
