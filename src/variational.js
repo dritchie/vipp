@@ -427,6 +427,11 @@ function infer(target, guide, args, opts) {
 		elbo: elboEst,
 		params: params
 	};
+	if (chains.length > 0) {
+		ret.euboChainStates = chains.map(function(c) {
+			return c.returnVal;
+		});
+	}
 	if (recordStepStats) ret.stepStats = stepStats;
 	return ret;
 
