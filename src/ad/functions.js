@@ -244,6 +244,20 @@ var d_max = function(x, y) {
   return d_lt(x, y) ? y : x;
 };
 
+var d_tan = lift_real_to_real(Math.tan, function(x){
+  var tx = Math.tan(x);
+  return 1.0 + tx*tx;
+});
+
+var d_cosh = lift_real_to_real(Math.cosh, function(x){ Math.sinh(x); });
+
+var d_sinh = lift_real_to_real(Math.sinh, function(x){ Math.cosh(x); });
+
+var d_tanh = lift_real_to_real(Math.tanh, function(x){
+  var tx = Math.tanh(x);
+  return 1.0 - tx*tx;
+});
+
 
 /** derivatives and gradients **/
 var _e_ = 0
@@ -299,7 +313,6 @@ module.exports = {
 };
 
 // Also expose functions via the Math module
-// TODO: tan, hyperbolic trig fns
 var d_Math = {};
 var mathProps = Object.getOwnPropertyNames(Math);
 for (var i = 0; i < mathProps.length; i++) {
@@ -319,6 +332,10 @@ d_Math.atan2 = d_atan;
 d_Math.abs = d_abs;
 d_Math.min = d_min;
 d_Math.max = d_max;
+d_Math.tan = d_tan;
+d_Math.sinh = d_sinh;
+d_Math.cosh = d_cosh;
+d_Math.tanh = d_tanh;
 module.exports.ad_Math = d_Math;
 
 
