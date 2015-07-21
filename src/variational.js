@@ -46,15 +46,15 @@ function infer(target, guide, args, opts) {
 	var recordStepStats = opt(opts.recordStepStats, false);
 	var regularize = opt(opts.regularize, undefined);
 	var gradientOpts = opt(opts.gradientOpts, {
-		estimator: 'ELBO'
+		method: 'ELBO'
 	});
-	if (gradientOpts.estimator !== 'ELBO') {
+	if (gradientOpts.method !== 'ELBO') {
 		gradientOpts.nChains = opt(gradientOpts.nChains, 1);
 		gradientOpts.burnIn = opt(gradientOpts.burnIn, 1000);
 		gradientOpts.lag = opt(gradientOpts.lag, 0);
 	}
-	if (gradientOpts.estimator === 'ELBO+EUBO') {
-		gradientOpts.mixProb = opt(gradientOpts.mixProb, 0.5);
+	if (gradientOpts.method === 'ELBO+EUBO' || gradientOpts.method === 'ELBO|EUBO') {
+		gradientOpts.mixWeight = opt(gradientOpts.mixWeight, 0.5);
 	}
 
 	// Define the regularizer for variational parameters
@@ -199,8 +199,24 @@ function infer(target, guide, args, opts) {
 	if (recordStepStats) {
 		stepStats = {
 			time: [],
-			elbo: []
+			elbo: [],
+			eubo: []
 		};
+	}
+
+	// Estimate the ELBO
+	var estimateELBO = function() {
+		// Initialize accumulators
+		var nParams = params.values.length;
+		var sumScoreDiff = 0.0;
+		for (var s = 0; s < nSamples; s++) {
+			trace.run(guideThunk);
+			var guideScore = trace.score;
+			trace.rerun(targetThunk);
+			var targetScore = trace.score;
+			sumScoreDiff += (targetScore - guideScore);
+		}
+		return sumScoreDiff / nSamples;
 	}
 
 	// Estimate the parameter gradient using the ELBO
@@ -294,12 +310,12 @@ function infer(target, guide, args, opts) {
 		};
 	}
 
-	// Estimate the parameter gradient using the EUBO
+
 	var nChains = gradientOpts.nChains;
 	var burnIn = gradientOpts.burnIn;
 	var lag = gradientOpts.lag;
 	var chains = [];
-	var estimateGradientEUBO = function() {
+	var getPosteriorSample = function() {
 		if (chains.length === 0) {
 			// Initialize MH chains
 			for (var i = 0; i < nChains; i++) {
@@ -310,16 +326,38 @@ function infer(target, guide, args, opts) {
 				chains.push(tr);
 			}
 		}
+		// Pick a chain at random
+		var chain = chains[Math.floor(Math.random()*nChains)];
+		for (var l = 0; l < lag; l++)
+			chain.mhstep(targetThunk);
+		return chain;
+	}
+
+	// Estimate the EUBO
+	var estimateEUBO = function() {
+		// Initialize accumulators
+		var nParams = params.values.length;
+		var sumScoreDiff = 0.0;
+		for (var s = 0; s < nSamples; s++) {
+			var trace = getPosteriorSample();
+			var targetScore = trace.score;
+			trace.rerun(guideThunk);
+			var guideScore = trace.score;
+			trace.score = targetScore; // Restore
+			sumScoreDiff += (targetScore - guideScore);
+		}
+		return sumScoreDiff / nSamples;
+	}
+
+	// Estimate the parameter gradient using the EUBO
+	var estimateGradientEUBO = function() {
 		var nParams = params.values.length;
 		var gradEst = numeric.rep([nParams], 0.0);
 		var sumScoreDiff = 0.0;
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
-			// Pick a chain at random
-			var chain = chains[Math.floor(Math.random()*nChains)];
-			for (var l = 0; l < lag; l++)
-				chain.mhstep(targetThunk);
+			var chain = getPosteriorSample();
 			var targetScore = chain.score;
 			// Save the choices + choiceInfo so we can restore them after the AD gradient run
 			var choices = _.clone(chain.choices);
@@ -346,7 +384,7 @@ function infer(target, guide, args, opts) {
 			console.log('  gradEst: ' +  gradEst.toString());
 		}
 		return {
-			elbo: euboEst,	// Really should name this properly...
+			eubo: euboEst,
 			grad: gradEst
 		}
 	}
@@ -358,9 +396,23 @@ function infer(target, guide, args, opts) {
 	} else if (gradientOpts.method === 'EUBO') {
 		var estimateGradient = estimateGradientEUBO;
 	} else if (gradientOpts.method == 'ELBO+EUBO') {
-		var mixProb = gradientOpts.mixProb
+		var mixWeight = gradientOpts.mixWeight
 		var estimateGradient = function() {
-			if (Math.random() < mixProb)
+			var elboEst = estimateGradientELBO(false, false);
+			var euboEst = estimateGradientEUBO();
+			numeric.muleq(elboEst.grad, mixWeight);
+			numeric.muleq(euboEst.grad, 1.0 - mixWeight);
+			var comboGrad = numeric.add(elboEst.grad, euboEst.grad);
+			return {
+				grad: comboGrad,
+				elbo: elboEst.elbo,
+				eubo: euboEst.eubo
+			};
+		};
+	} else if (gradientOpts.method == 'ELBO|EUBO') {
+		var mixWeight = gradientOpts.mixWeight;
+		var estimateGradient = function() {
+			if (Math.random() < mixWeight)
 				return estimateGradientELBO(false, false);
 			else
 				return estimateGradientEUBO();
@@ -385,11 +437,13 @@ function infer(target, guide, args, opts) {
 			console.log('  params: ' + params.values.toString());
 		var est = estimateGradient();
 		var gradEst = est.grad;
-		var elboEst = est.elbo;
 		// Record some statistics, if requested
 		if (recordStepStats) {
 			stepStats.time.push((present() - tStart)/1000);
+			var elboEst = est.elbo === undefined ? estimateELBO() : est.elbo;
 			stepStats.elbo.push(elboEst);
+			var euboEst = est.eubo === undefined ? estimateEUBO() : est.eubo;
+			stepStats.eubo.push(euboEst);
 		}
 		var maxDelta = 0;
 		for (var i = 0; i < nParams; i++) {
@@ -426,7 +480,8 @@ function infer(target, guide, args, opts) {
 		converged: converged,
 		stepsTaken: currStep,
 		timeTaken: (tEnd - tStart)/1000,
-		elbo: elboEst,
+		elbo: est.elbo,
+		eubo: est.eubo,
 		params: params
 	};
 	if (chains.length > 0) {

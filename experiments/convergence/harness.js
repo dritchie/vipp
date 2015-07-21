@@ -1,5 +1,6 @@
 
 var vipp = require('../../src/main');
+var variational = require('../../src/variational.js')
 var adtransform = require('../../src/ad/transform.js').transform;
 var fs = require('fs');
 var syscall = require('child_process').execSync;
@@ -21,6 +22,7 @@ var assert = require('assert');
 //	     numRuns: Number of runs of each condition to record.
 //       modelArgs: Any input arguments that the target/guide need (i.e. evidence/data).
 //          Defaults to undefined.
+//       enforceConvergence: whether to bail if inference fails to converge (defaults to true)
 //    }
 function runExperiment(modelFileName, conditions, options) {
 	// Invoke make, to be sure that everything is up-to-date
@@ -36,26 +38,28 @@ function runExperiment(modelFileName, conditions, options) {
 	var basename = options.outBaseName || modelFileName;
 	var overallFile = fs.openSync(basename + '_overall.csv', 'w');
 	var stepFile = fs.openSync(basename + '_step.csv', 'w');
-	fs.writeSync(overallFile, 'condition,steps,time,elbo\n');
-	fs.writeSync(stepFile, 'condition,step,time,elbo\n');
+	fs.writeSync(overallFile, 'condition,steps,time,elbo,eubo\n');
+	fs.writeSync(stepFile, 'condition,step,time,elbo,eubo\n');
 	// Run
+	var enforceConvergence = options.enforceConvergence === undefined ? true : options.enforceConvergence;
 	for (var i = 0; i < conditions.length; i++) {
 		var condition = conditions[i];
 		for (var j = 0; j < options.numRuns; j++) {
 			process.stdout.write(' Running condition "' + condition.name + '" (Run ' + (j+1) + '/' + options.numRuns + ')\r');
 			var results = runCondition(code, condition);
-			assert(results.converged);
+			if (enforceConvergence) assert(results.converged);
 			// Write data to .csv
 			fs.writeSync(overallFile,
 				[condition.name,
 				 results.stepsTaken,
 				 results.timeTaken,
-				 results.elbo].toString()+'\n');
+				 results.elbo,
+				 results.eubo].toString()+'\n');
 			var time = results.stepStats.time;
 			var elbo = results.stepStats.elbo;
-			assert(time.length === elbo.length);
+			var eubo = results.stepStats.eubo;
 			for (var k = 0; k < time.length; k++) {
-				fs.writeSync(stepFile, [condition.name, k, time[k], elbo[k]].toString()+'\n');
+				fs.writeSync(stepFile, [condition.name, k, time[k], elbo[k], eubo[k]].toString()+'\n');
 			}
 		}
 		process.stdout.write('\n');
@@ -101,8 +105,25 @@ function runCondition(code, condition) {
 }
 
 
+// Simpler version: takes a filename + all the same args that infer takes
+function run(filename, target, guide, args, opts) {
+	opts.recordStepStats = true;
+	var results = variational.infer(target, guide, args, opts);
+	var file = fs.openSync(filename, 'w');
+	fs.writeSync(file, 'step,time,elbo,eubo\n');
+	var time = results.stepStats.time;
+	var elbo = results.stepStats.elbo;
+	var eubo = results.stepStats.eubo;
+	for (var k = 0; k < time.length; k++) {
+		fs.writeSync(file, [k, time[k], elbo[k], eubo[k]].toString()+'\n');
+	}
+	return results;
+}
+
+
 module.exports = {
-	runExperiment: runExperiment
+	runExperiment: runExperiment,
+	run: run
 }
 
 
