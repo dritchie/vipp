@@ -5,6 +5,7 @@ var present = require('present');
 var assert = require('assert');
 var _ = require('underscore');
 
+
 // Get the primal value of a dual number/tape
 function primal(x) {
 	return x.primal === undefined ? x : x.primal;
@@ -20,12 +21,133 @@ var coroutine = {
 	factor: function(num) {}
 };
 
+
+function makeParams() {
+	return {
+		values: [],
+		transforms: []
+	};
+}
+
 // Run a variational program with a given param set
 // (This is just needed to track the param index)
 function run(guide, args, params) {
 	coroutine.paramIndex = 0;
 	return guide(args, params);
 }
+
+
+// Define the variational inference coroutine
+function Trace() {};
+Trace.prototype = {
+	erpScoreRaw: function(erp, params, val) {
+		var score = erp.score(params, val);
+		this.score += score;
+		return score;
+	},
+	erpScoreAD: function(erp, params, val) {
+		var score = erp.adscore(params, val);
+		this.score = ad_add(this.score, score);
+		return score;
+	},
+	sample: function(erp, params) {
+		var val = this.choices[this.choiceIndex];
+		if (val === undefined) {
+			// We don't store tapes in the trace, just raw numbers, so that
+			//    re-running with the target program works correctly.
+			var pparams = params.map(function(x) { return primal(x); });
+			val = erp.sample(pparams);
+			this.choices.push(val);
+			this.choiceInfo.push({ erp: erp, params: params, score: 0.0 });
+		}
+		var score = this.erpScore(erp, params, val);
+		this.choiceInfo[this.choiceIndex] = { erp: erp, params: params, score: score };
+		this.choiceIndex++;
+		return val;
+	},
+	factorRaw: function(num) {
+		this.score += num;
+	},
+	factorAD: function(num) {
+		this.score = ad_add(this.score, num);
+	},
+	run: function(thunk, ad) {
+		this.choices = [];
+		this.choiceInfo = [];
+		return this.rerun(thunk, ad);
+	},
+	rerun: function(thunk, ad) {
+		this.paramIndex = 0;
+		this.choiceIndex = 0;
+		this.score = 0;
+		this.erpScore = (ad ? this.erpScoreAD : this.erpScoreRaw);
+		this.factor = (ad ? this.factorAD : this.factorRaw);
+		var oldCoroutine = coroutine;
+		coroutine = this;
+		this.returnVal = thunk();
+		coroutine = oldCoroutine
+		return this.returnVal;
+	},
+	mhstep: function(thunk, ad) {
+		// Make proposal
+		var cindex = Math.floor(Math.random()*this.choices.length);
+		var info = this.choiceInfo[cindex];
+		var currval = this.choices[cindex];
+		var rvsLP = info.score;
+		var newval = info.erp.sample(info.params);
+		var fwdLP = info.erp.score(info.params, newval);
+
+		// Run trace update
+		var oldChoices = _.clone(this.choices);
+		var oldChoiceInfo = _.clone(this.choiceInfo);
+		var oldScore = this.score;
+		var oldRetVal = this.returnVal;
+		this.choices[cindex] = newval;
+		this.rerun(thunk, ad);
+
+		// Accept/reject
+		var acceptProb = Math.min(1.0, Math.exp(this.score - oldScore + rvsLP - fwdLP));
+		// console.log('-----------------');
+		// console.log('newScore: ' + this.score + ', oldScore: ' + oldScore);
+		// console.log('fwdLP: ' + fwdLP + ', rvsLP: ' + rvsLP);
+		// console.log('acceptProb: ', acceptProb);
+		if (Math.random() < acceptProb) {
+			// console.log('ACCEPT');
+		} else {
+			// console.log('REJECT');
+			this.choices = oldChoices;
+			this.choiceInfo = oldChoiceInfo;
+			this.score = oldScore;
+			this.returnVal = oldRetVal;
+		}
+	}
+};
+
+
+// Thunks that we'll feed to 'run' and 'rerun'
+function makeTargetThunk(target, args) {
+	return function() {
+		return target(args);
+	};
+}
+function makeGuideThunk(guide, params, args) {
+	return function() {
+		return guide(params, args);
+	};
+}
+function makeGuideGradThunk(trace, guide, params, args) {
+	var guideGrad = ad_gradientR(function(p) {
+		var oldvals = params.values;
+		params.values = p;
+		guide(params, args);
+		params.values = oldvals;
+		return trace.score;
+	})
+	return function() {
+		return guideGrad(params.values);
+	}
+}
+
 
 // target: original probabilistic program
 // guide: variational program
@@ -82,117 +204,14 @@ function infer(target, guide, args, opts) {
 		}
 	} else regularize = function(p0, p1, learningRate) { return p1; };
 
-	// Define the inference coroutine
-	function Trace() {};
-	Trace.prototype = {
-		erpScoreRaw: function(erp, params, val) {
-			var score = erp.score(params, val);
-			this.score += score;
-			return score;
-		},
-		erpScoreAD: function(erp, params, val) {
-			var score = erp.adscore(params, val);
-			this.score = ad_add(this.score, score);
-			return score;
-		},
-		sample: function(erp, params) {
-			var val = this.choices[this.choiceIndex];
-			if (val === undefined) {
-				// We don't store tapes in the trace, just raw numbers, so that
-				//    re-running with the target program works correctly.
-				var pparams = params.map(function(x) { return primal(x); });
-				val = erp.sample(pparams);
-				this.choices.push(val);
-				this.choiceInfo.push({ erp: erp, params: params, score: 0.0 });
-			}
-			var score = this.erpScore(erp, params, val);
-			this.choiceInfo[this.choiceIndex] = { erp: erp, params: params, score: score };
-			this.choiceIndex++;
-			return val;
-		},
-		factorRaw: function(num) {
-			this.score += num;
-		},
-		factorAD: function(num) {
-			this.score = ad_add(this.score, num);
-		},
-		run: function(thunk, ad) {
-			this.choices = [];
-			this.choiceInfo = [];
-			return this.rerun(thunk, ad);
-		},
-		rerun: function(thunk, ad) {
-			this.paramIndex = 0;
-			this.choiceIndex = 0;
-			this.score = 0;
-			this.erpScore = (ad ? this.erpScoreAD : this.erpScoreRaw);
-			this.factor = (ad ? this.factorAD : this.factorRaw);
-			var oldCoroutine = coroutine;
-			coroutine = this;
-			this.returnVal = thunk();
-			coroutine = oldCoroutine
-			return this.returnVal;
-		},
-		mhstep: function(thunk, ad) {
-			// Make proposal
-			var cindex = Math.floor(Math.random()*this.choices.length);
-			var info = this.choiceInfo[cindex];
-			var currval = this.choices[cindex];
-			var rvsLP = info.score;
-			var newval = info.erp.sample(info.params);
-			var fwdLP = info.erp.score(info.params, newval);
-
-			// Run trace update
-			var oldChoices = _.clone(this.choices);
-			var oldChoiceInfo = _.clone(this.choiceInfo);
-			var oldScore = this.score;
-			var oldRetVal = this.returnVal;
-			this.choices[cindex] = newval;
-			this.rerun(thunk, ad);
-
-			// Accept/reject
-			var acceptProb = Math.min(1.0, Math.exp(this.score - oldScore + rvsLP - fwdLP));
-			// console.log('-----------------');
-			// console.log('newScore: ' + this.score + ', oldScore: ' + oldScore);
-			// console.log('fwdLP: ' + fwdLP + ', rvsLP: ' + rvsLP);
-			// console.log('acceptProb: ', acceptProb);
-			if (Math.random() < acceptProb) {
-				// console.log('ACCEPT');
-			} else {
-				// console.log('REJECT');
-				this.choices = oldChoices;
-				this.choiceInfo = oldChoiceInfo;
-				this.score = oldScore;
-				this.returnVal = oldRetVal;
-			}
-		}
-	}
-
 	// Default trace
 	var trace = new Trace();
 
-	var params = {
-		values: [],
-		transforms: []
-	}
+	var params = makeParams();
 
-	// Thunks that we'll feed to 'run' and 'rerun'
-	var targetThunk = function() {
-		return target(args);
-	}
-	var guideThunk = function() {
-		return guide(params, args);
-	}
-	var guideGrad = ad_gradientR(function(p) {
-		var oldvals = params.values;
-		params.values = p;
-		guide(params, args);
-		params.values = oldvals;
-		return coroutine.score;
-	})
-	var guideGradThunk = function() {
-		return guideGrad(params.values);
-	}
+	var targetThunk = makeTargetThunk(target, args);
+	var guideThunk = makeGuideThunk(guide, params, args);
+	var guideGradThunk = makeGuideGradThunk(trace, guide, params, args);
 
 	// Prep step stats, if requested
 	var stepStats = null;
