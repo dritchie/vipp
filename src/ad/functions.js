@@ -308,8 +308,7 @@ module.exports = {
   ad_atan: d_atan,
   ad_derivativeR: derivativeR,
   ad_gradientR: gradientR,
-  // For testing purposes only
-  tape: S_tape
+  ad_maketape: function(x) { return new S_tape(_e_, x); }
 };
 
 // Also expose functions via the Math module

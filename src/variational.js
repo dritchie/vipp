@@ -14,8 +14,7 @@ function primal(x) {
 
 // Global inference coroutine
 var coroutine = {
-	paramIndex: 0,
-	sample: function(erp, params) {
+	sample: function(name, erp, params) {
 		return erp.sample(params);
 	},
 	factor: function(num) {}
@@ -24,22 +23,27 @@ var coroutine = {
 
 function makeParams() {
 	return {
-		values: [],
-		transforms: []
+		values: {},
+		transforms: {}
 	};
-}
-
-// Run a variational program with a given param set
-// (This is just needed to track the param index)
-function run(guide, args, params) {
-	coroutine.paramIndex = 0;
-	return guide(args, params);
 }
 
 
 // Define the variational inference coroutine
 function Trace() {};
 Trace.prototype = {
+	copy: function(otherTrace) {
+		this.score = otherTrace.score;
+		this.numChoices = otherTrace.numChoices;
+		this.choices = [];
+		for (var name in otherTrace.choices) {
+			var c = otherTrace.choices[name];
+			this.choices[name] = {
+				val: c.val, erp: c.erp, params: c.params, score: c.score, reachable: true
+			};
+		}
+		this.returnVal = otherTrace.returnVal;
+	},
 	erpScoreRaw: function(erp, params, val) {
 		var score = erp.score(params, val);
 		this.score += score;
@@ -50,20 +54,22 @@ Trace.prototype = {
 		this.score = ad_add(this.score, score);
 		return score;
 	},
-	sample: function(erp, params) {
-		var val = this.choices[this.choiceIndex];
-		if (val === undefined) {
+	sample: function(name, erp, params) {
+		var c = this.choices[name];
+		if (c === undefined) {
 			// We don't store tapes in the trace, just raw numbers, so that
 			//    re-running with the target program works correctly.
 			var pparams = params.map(function(x) { return primal(x); });
-			val = erp.sample(pparams);
-			this.choices.push(val);
-			this.choiceInfo.push({ erp: erp, params: params, score: 0.0 });
+			var val = erp.sample(pparams);
+			c = { val: val, erp: erp, params: params, score: this.erpScore(erp, params, val), reachable: true };
+			this.choices[name] = c;
+			this.numChoices++;
+			this.newlp += c.score;
+		} else {
+			c.score = this.erpScore(erp, params, val);
+			c.reachable = true;
 		}
-		var score = this.erpScore(erp, params, val);
-		this.choiceInfo[this.choiceIndex] = { erp: erp, params: params, score: score };
-		this.choiceIndex++;
-		return val;
+		return c.val;
 	},
 	factorRaw: function(num) {
 		this.score += num;
@@ -72,14 +78,13 @@ Trace.prototype = {
 		this.score = ad_add(this.score, num);
 	},
 	run: function(thunk, ad) {
-		this.choices = [];
-		this.choiceInfo = [];
+		this.choices = {};
+		this.numChoices = 0;
 		return this.rerun(thunk, ad);
 	},
 	rerun: function(thunk, ad) {
-		this.paramIndex = 0;
-		this.choiceIndex = 0;
-		this.score = 0;
+		this.score = 0.0;
+		this.newlp = 0.0;
 		this.erpScore = (ad ? this.erpScoreAD : this.erpScoreRaw);
 		this.factor = (ad ? this.factorAD : this.factorRaw);
 		var oldCoroutine = coroutine;
@@ -91,21 +96,39 @@ Trace.prototype = {
 	mhstep: function(thunk, ad) {
 		// Make proposal
 		var cindex = Math.floor(Math.random()*this.choices.length);
-		var info = this.choiceInfo[cindex];
-		var currval = this.choices[cindex];
-		var rvsLP = info.score;
-		var newval = info.erp.sample(info.params);
-		var fwdLP = info.erp.score(info.params, newval);
+		var c;
+		var i = 0;
+		// (Could speed this up by keeping track of linear choice list)
+		for (var name in this.choices) {
+			c = this.choices[name];
+			if (i === cindex) break;
+			i++;
+		}
+		var rvsLP = c.score;
+		var newval = c.erp.sample(c.params);
+		var fwdLP = c.erp.score(c.params, newval);
 
 		// Run trace update
-		var oldChoices = _.clone(this.choices);
-		var oldChoiceInfo = _.clone(this.choiceInfo);
-		var oldScore = this.score;
-		var oldRetVal = this.returnVal;
-		this.choices[cindex] = newval;
+		var oldTrace = new Trace(); oldTrace.copy(this);
+		c.val = newval;
+		for (var name in this.choices)
+			this.choices[name].reachable = false;
 		this.rerun(thunk, ad);
 
+		// Clear out old choices
+		var oldlp = 0.0;
+		for (var name in this.choices) {
+			var c = this.choices[name];
+			if (!c.reachable) {
+				this.numChoices--;
+				oldlp += c.score;
+				delete this.choices[name];
+			}
+		}
+
 		// Accept/reject
+		fwdLP += this.newlp - Math.log(oldTrace.numChoices);
+		rvsLP += oldlp - Math.log(this.numChoices);
 		var acceptProb = Math.min(1.0, Math.exp(this.score - oldScore + rvsLP - fwdLP));
 		// console.log('-----------------');
 		// console.log('newScore: ' + this.score + ', oldScore: ' + oldScore);
@@ -115,10 +138,7 @@ Trace.prototype = {
 			// console.log('ACCEPT');
 		} else {
 			// console.log('REJECT');
-			this.choices = oldChoices;
-			this.choiceInfo = oldChoiceInfo;
-			this.score = oldScore;
-			this.returnVal = oldRetVal;
+			this.copy(oldTrace);
 		}
 	}
 };
@@ -136,15 +156,28 @@ function makeGuideThunk(guide, params, args) {
 	};
 }
 function makeGuideGradThunk(trace, guide, params, args) {
-	var guideGrad = ad_gradientR(function(p) {
-		var oldvals = params.values;
-		params.values = p;
-		guide(params, args);
-		params.values = oldvals;
-		return trace.score;
-	})
+	var objMap = function(obj, f) {
+	  var newobj = {};
+	  for (var prop in obj)
+	    newobj[prop] = f(obj[prop]);
+	  return newobj;
+	}
+	// This sort of violates the AD abstraction barrier,
+	//    but I can't think of any other way to do it.
 	return function() {
-		return guideGrad(params.values);
+		params.values = objMap(params.values, function(p) {
+			return ad_maketape(p);
+		});
+		guide(params, args);
+		trace.score.determineFanout();
+      	trace.score.reversePhase(1.0);
+      	var gradient = objMap(params.values, function(p) {
+      		return p.sensitivity;
+      	});
+      	params.values = objMap(params.values, function(p) {
+      		return p.primal;
+      	});;
+      	return gradient;
 	}
 }
 
@@ -226,7 +259,6 @@ function infer(target, guide, args, opts) {
 	// Estimate the ELBO
 	var estimateELBO = function() {
 		// Initialize accumulators
-		var nParams = params.values.length;
 		var sumScoreDiff = 0.0;
 		for (var s = 0; s < nSamples; s++) {
 			trace.run(guideThunk);
@@ -239,19 +271,17 @@ function infer(target, guide, args, opts) {
 	}
 
 	// Estimate the parameter gradient using the ELBO
-	var estimateGradientELBO = function(useEmpiricalMeans, componentWiseAStar) {
+	var estimateGradientELBO = function(componentWiseAStar) {
 		// Initialize accumulators
-		var nParams = params.values.length;
-		var sumGrad = numeric.rep([nParams], 0.0);
-		var sumWeightedGrad = numeric.rep([nParams], 0.0);
 		var sumScoreDiff = 0.0;
-		if (!useEmpiricalMeans) {
-			var sumWeightedGradSq = numeric.rep([nParams], 0.0);
-			var sumGradSq = numeric.rep([nParams], 0.0);
-		} else {
-			var gradSamps = [];
-			var weightedGradSamps = [];
-		}
+		var sumGrad = {};
+		var sumWeightedGrad = {};
+		var sumGradSq = {};
+		var sumWeightedGradSq = {};
+		// var sumGrad = numeric.rep([nParams], 0.0);
+		// var sumWeightedGrad = numeric.rep([nParams], 0.0);
+		// var sumWeightedGradSq = numeric.rep([nParams], 0.0);
+		// var sumGradSq = numeric.rep([nParams], 0.0);
 		// Draw samples from the guide, score using the target
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
@@ -262,70 +292,55 @@ function infer(target, guide, args, opts) {
 			var targetScore = trace.score;
 			var scoreDiff = targetScore - guideScore;
 			sumScoreDiff += scoreDiff;
-			var weightedGrad = numeric.mul(grad, scoreDiff);
 			if (verbosity > 4) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
 					+ ', diff: ' + scoreDiff);
-				console.log('    grad: ' + grad.toString());
-				console.log('    weightedGrad: ' + weightedGrad.toString());
+				console.log('    grad: ' + JSON.stringify(grad));
 			}
 			assert(isFinite(scoreDiff),
 				'Detected non-finite score(s)! ERP params have probably moved outside their support...');
-			numeric.addeq(sumGrad, grad);
-			numeric.addeq(sumWeightedGrad, weightedGrad);
-			if (!useEmpiricalMeans) {
-				numeric.poweq(grad, 2);	// grad is now gradSq
-				numeric.addeq(sumGradSq, grad);
-				var weightedGradSq = numeric.mul(grad, scoreDiff)
-				numeric.addeq(sumWeightedGradSq, weightedGradSq);
-			} else {
-				gradSamps.push(grad);
-				weightedGradSamps.push(weightedGrad);
+			for (var name in grad) {
+				var g = grad[name];
+				if (!sumGrad.hasOwnProperty(name)) {
+					sumGrad[name] = numeric.rep([g.length], 0.0);
+					sumWeightedGrad[name] = numeric.rep([g.length], 0.0);
+					sumGradSq[name] = numeric.rep([g.length], 0.0);
+					sumWeightedGradSq[name] = numeric.rep([g.length], 0.0);
+				}
+				var weightedGrad = numeric.mul(g, scoreDiff);
+				numeric.addeq(sumGrad[name], g);
+				numeric.addeq(sumWeightedGrad[name], weightedGrad);
+				numeric.poweq(g, 2);	// g is now g^2
+				numeric.addeq(sumGradSq[name], g);
+				var weightedGradSq = numeric.mul(g, scoreDiff)
+				numeric.addeq(sumWeightedGradSq[name], weightedGradSq);
 			}
 		}
-		if (!useEmpiricalMeans) {
-			var covarVec = sumWeightedGradSq;
-			var varVec = sumGradSq;
-		} else {
-			var gradMean = numeric.div(sumGrad, nSamples);
-			var weightedGradMean = numeric.div(sumWeightedGrad, nSamples);
-			var gradVar = numeric.rep([nParams], 0.0);
-			var covar = numeric.rep([nParams], 0.0);
-			for (var s = 0; s < nSamples; s++) {
-				var normGrad = numeric.sub(gradSamps[s], gradMean);
-				numeric.addeq(gradVar, numeric.mul(normGrad, normGrad));
-				var normWeightedGrad = numeric.sub(weightedGradSamps[s], weightedGradMean);
-				numeric.addeq(covar, numeric.mul(normGrad, normWeightedGrad));
-			}
-			// Not sure about these...
-			numeric.diveq(gradVar, nSamples);
-			numeric.diveq(covar, nSamples);
-			var covarVec = covar;
-			var varVec = gradVar;
-		}
-		var elboEst = sumScoreDiff / nSamples;
 		// Compute AdaGrad learning rate and control variate,
 		//    then do parameter update
-		if (componentWiseAStar) {
-			var aStar = numeric.div(covarVec, varVec);
-			numeric.muleq(aStar, sumGrad);
-			var elboGradEst = numeric.sub(sumWeightedGrad, aStar);
-		} else {
-			var numerSum = numeric.sum(covarVec);
-			var denomSum = numeric.sum(varVec);
-			var aStar = numerSum / denomSum;
-			var offset = numeric.mul(sumGrad, aStar);
-			var elboGradEst = numeric.sub(sumWeightedGrad, offset);
+		var elboGradEst = {};
+		for (var name in sumGrad) {
+			if (componentWiseAStar) {
+				var aStar = numeric.div(sumWeightedGradSq[name], sumGradSq[name]);
+				numeric.muleq(aStar, sumGrad[name]);
+				elboGradEst[name] = numeric.sub(sumWeightedGrad[name], aStar);
+			} else {
+				var numerSum = numeric.sum(sumWeightedGradSq[name]);
+				var denomSum = numeric.sum(sumGradSq[name]);
+				var aStar = numerSum / denomSum;
+				var offset = numeric.mul(sumGrad[name], aStar);
+				elboGradEst[name] = numeric.sub(sumWeightedGrad[name], offset);
+			}
+			numeric.muleq(elboGradEst, 1.0/nSamples);
 		}
-		numeric.muleq(elboGradEst, 1.0/nSamples);
 		if (verbosity > 2) {
-			console.log('  sumGrad: ' +  sumGrad.toString());
-			console.log('  sumWeightedGrad: ' +  sumWeightedGrad.toString());
-			console.log('  elboGradEst: ' +  elboGradEst.toString());
+			console.log('  sumGrad: ' +  JSON.stringify(sumGrad));
+			console.log('  sumWeightedGrad: ' +  JSON.stringify(sumWeightedGrad));
+			console.log('  elboGradEst: ' +  JSON.stringify(elboGradEst));
 		}
 		return {
 			grad: elboGradEst,
-			elbo: elboEst
+			elbo: sumScoreDiff / nSamples
 		};
 	}
 
@@ -355,7 +370,6 @@ function infer(target, guide, args, opts) {
 	// Estimate the EUBO
 	var estimateEUBO = function() {
 		// Initialize accumulators
-		var nParams = params.values.length;
 		var sumScoreDiff = 0.0;
 		for (var s = 0; s < nSamples; s++) {
 			var trace = getPosteriorSample();
@@ -370,69 +384,54 @@ function infer(target, guide, args, opts) {
 
 	// Estimate the parameter gradient using the EUBO
 	var estimateGradientEUBO = function() {
-		var nParams = params.values.length;
-		var gradEst = numeric.rep([nParams], 0.0);
+		var gradEst = {};
 		var sumScoreDiff = 0.0;
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
 			var chain = getPosteriorSample();
 			var targetScore = chain.score;
-			// Save the choices + choiceInfo so we can restore them after the AD gradient run
-			var choices = _.clone(chain.choices);
-			var choiceInfo = _.clone(chain.choiceInfo);
-			var retVal = chain.returnVal;
+			// Save the trace so we can restore it after the AD gradient run
+			var oldChain = new Trace(); oldChain.copy(chain);
 			var gradient = chain.rerun(guideGradThunk, true);
 			var guideScore = primal(chain.score);
-			chain.score = targetScore;
-			chain.choices = choices;
-			chain.choiceInfo = choiceInfo;
-			chain.returnVal = retVal;
+			chain.copy(oldChain);
 			var scoreDiff = targetScore - guideScore;
 			if (verbosity > 4) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
 					+ ', diff: ' + scoreDiff);
-				console.log('    grad: ' + grad.toString());
+				console.log('    grad: ' + JSON.stringify(grad));
 			}
 			sumScoreDiff += scoreDiff;
-			numeric.addeq(gradEst, gradient);
+			for (var name in gradient) {
+				var g = gradient[name];
+				if (!gradEst.hasOwnProperty(name))
+					gradEst[name] = numeric.rep([g.length], 0.0);
+				numeric.addeq(gradEst[name], g);
+			}
 		}
-		var euboEst = sumScoreDiff / nSamples;
-		numeric.diveq(gradEst, nSamples);
+		for (var name in gradEst)
+			numeric.diveq(gradEst[name], nSamples);
 		if (verbosity > 2) {
-			console.log('  gradEst: ' +  gradEst.toString());
+			console.log('  gradEst: ' +  JSON.stringify(gradEst));
 		}
 		return {
-			eubo: euboEst,
-			grad: gradEst
+			grad: gradEst,
+			eubo: sumScoreDiff / nSamples
 		}
 	}
 
 	// Pre-define the function that'll compute the gradient estimator, depending
 	//    upon which method was requested
 	if (gradientOpts.method === 'ELBO') {
-		var estimateGradient = function() { return estimateGradientELBO(false, false); };
+		var estimateGradient = function() { return estimateGradientELBO(false); };
 	} else if (gradientOpts.method === 'EUBO') {
 		var estimateGradient = estimateGradientEUBO;
-	} else if (gradientOpts.method == 'ELBO+EUBO') {
-		var mixWeight = gradientOpts.mixWeight
-		var estimateGradient = function() {
-			var elboEst = estimateGradientELBO(false, false);
-			var euboEst = estimateGradientEUBO();
-			numeric.muleq(elboEst.grad, mixWeight);
-			numeric.muleq(euboEst.grad, 1.0 - mixWeight);
-			var comboGrad = numeric.add(elboEst.grad, euboEst.grad);
-			return {
-				grad: comboGrad,
-				elbo: elboEst.elbo,
-				eubo: euboEst.eubo
-			};
-		};
 	} else if (gradientOpts.method == 'ELBO|EUBO') {
 		var mixWeight = gradientOpts.mixWeight;
 		var estimateGradient = function() {
 			if (Math.random() < mixWeight)
-				return estimateGradientELBO(false, false);
+				return estimateGradientELBO(false);
 			else
 				return estimateGradientEUBO();
 		};
@@ -440,20 +439,15 @@ function infer(target, guide, args, opts) {
 
 	var tStart = present();
 
-	// Run guide once to initialize vector of params
-	// TODO: This will not work if params has variable size--we'll need to
-	//    adopt a different strategy then.
-	trace.run(guideThunk);
 	// Do variational inference
 	var currStep = 0;
 	var maxDeltaAvg = 0.0;
-	var nParams = params.values.length;
-	var runningG2 = numeric.rep([nParams], 0.0);
+	var runningG2 = {};
 	do {
 		if (verbosity > 1)
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
 		if (verbosity > 2)
-			console.log('  params: ' + params.values.toString());
+			console.log('  params: ' + JSON.stringify(params.values));
 		var est = estimateGradient();
 		var gradEst = est.grad;
 		// Record some statistics, if requested
@@ -465,22 +459,28 @@ function infer(target, guide, args, opts) {
 			stepStats.eubo.push(euboEst);
 		}
 		var maxDelta = 0;
-		for (var i = 0; i < nParams; i++) {
-			var grad = gradEst[i];
-			runningG2[i] += grad*grad;
-			var weight = learnRate / Math.sqrt(runningG2[i]);
-			assert(isFinite(weight),
-				'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
-			var delta = weight * grad;
-			var p0 = params.values[i];
-			var p1 = p0 + delta;
-			params.values[i] = regularize(p0, p1, weight);
-			// When recording changes, do this in the transformed space
-			if (params.transforms[i] !== undefined) {
-				var t = params.transforms[i];
-				delta = t(p1) - t(p0);
+		for (var name in params) {
+			var grad = gradEst[name];
+			if (!runningG2.hasOwnProperty(name))
+				runningG2[name] = numeric.rep([grad.length], 0.0);
+			var rg2 = runningG2[name];
+			for (var i = 0; i < grad.length; i++) {
+				var g = grad[i];
+				rg2[i] += g*g;
+				var weight = learnRate / Math.sqrt(rg2[i]);
+				assert(isFinite(weight),
+					'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
+				var delta = weight * g;
+				var p0 = params.values[name][i];
+				var p1 = p0 + delta;
+				params.values[name][i] = regularize(p0, p1, weight);
+				// When recording changes, do this in the transformed space
+				if (params.transforms[name][i] !== undefined) {
+					var t = params.transforms[name][i];
+					delta = t(p1) - t(p0);
+				}
+				maxDelta = Math.max(Math.abs(delta), maxDelta);
 			}
-			maxDelta = Math.max(Math.abs(delta), maxDelta);
 		}
 		// Check for convergence
 		maxDeltaAvg = maxDeltaAvg * 0.9 + maxDelta;
@@ -510,17 +510,10 @@ function infer(target, guide, args, opts) {
 	}
 	if (recordStepStats) ret.stepStats = stepStats;
 	return ret;
-
-	// // Testing out MH
-	// trace.run(targetThunk);
-	// for (var i = 0; i < 1000; i++) {
-	// 	trace.mhstep(targetThunk);
-	// }
-	// return trace.returnVal;
 }
 
-function sample(erp, params) {
-	return coroutine.sample(erp, params);
+function sample(name, erp, params) {
+	return coroutine.sample(name, erp, params);
 }
 
 function factor(num) {
@@ -531,16 +524,15 @@ function factor(num) {
 // May have an initial val, a transform, and  a random sampler.
 // Transform specifies how the value should be transformed.
 // The sampler may be used to sample an initial val (if 'initialVal' is undefined).
-function param(params, initialVal, transform, sampler, hypers) {
-	if (coroutine.paramIndex == params.values.length) {
+function param(name, params, initialVal, transform, sampler, hypers) {
+	if (!params.values.hasOwnProperty(name)) {
 		if (initialVal === undefined)
 			initialVal = sampler(hypers);
-		params.values.push(primal(initialVal));
-		params.transforms.push(transform);
+		params.values[name] = ad_maketape(primal(initialVal));
+		params.transforms[name] = transform;
 	}
-	var t = params.transforms[coroutine.paramIndex];
-	var p = params.values[coroutine.paramIndex];
-	coroutine.paramIndex++;
+	var t = params.transforms[name];
+	var p = params.values[name];
 	if (t !== undefined)
 		return t(p);
 	else
@@ -548,7 +540,6 @@ function param(params, initialVal, transform, sampler, hypers) {
 }
 
 module.exports = {
-	run: run,
 	infer: infer,
 	sample: sample,
 	factor: factor,

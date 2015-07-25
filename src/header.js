@@ -12,69 +12,58 @@ for (var prop in variational)
 
 
 // Common ERPs
-var flip = function(theta) {
-  return sample(erp.bernoulliERP, [theta]);
+var flip = function(name, theta) {
+  return sample(name, erp.bernoulliERP, [theta]);
 };
 
-var randomInteger = function(n) {
-  return sample(erp.randomIntegerERP, [n]);
+var randomInteger = function(name, n) {
+  return sample(name, erp.randomIntegerERP, [n]);
 };
 
-var discrete = function(n) {
-  return sample(erp.discreteERP, [n]);
+var discrete = function(name, n) {
+  return sample(name, erp.discreteERP, [n]);
 };
 
-var categorical = function(ps, vs) {
-  return vs[discrete(ps)];
+var categorical = function(name, ps, vs) {
+  return vs[discrete(name, ps)];
 }
 
-var gaussian = function(mu, sigma) {
-  return sample(erp.gaussianERP, [mu, sigma]);
+var gaussian = function(name, mu, sigma) {
+  return sample(name, erp.gaussianERP, [mu, sigma]);
 };
 
-// var multivariateGaussian = function(mu, cov) {
-//   return sample(multivariateGaussianERP, [mu, cov]);
-// };
-
-var uniform = function(a, b) {
-  return sample(erp.uniformERP, [a, b]);
+var uniform = function(name, a, b) {
+  return sample(name, erp.uniformERP, [a, b]);
 };
 
-var uniformDraw = function(l) {
-  return l[sample(erp.randomIntegerERP, [l.length])];
+var uniformDraw = function(name, l) {
+  return l[sample(name, erp.randomIntegerERP, [l.length])];
 };
 
-var dirichlet = function(alpha) {
-  return sample(erp.dirichletERP, alpha);
+var dirichlet = function(name, alpha) {
+  return sample(name, erp.dirichletERP, alpha);
 };
 
-var poisson = function(mu, k) {
-  return sample(erp.poissonERP, [mu, k]);
+var poisson = function(name, mu, k) {
+  return sample(name, erp.poissonERP, [mu, k]);
 };
 
-var binomial = function(p, n) {
-  return sample(erp.binomialERP, [p, n]);
+var binomial = function(name, p, n) {
+  return sample(name, erp.binomialERP, [p, n]);
 };
 
-var beta = function(a, b) {
-  return sample(erp.betaERP, [a, b]);
+var beta = function(name, a, b) {
+  return sample(name, erp.betaERP, [a, b]);
 };
 
-var exponential = function(a) {
-  return sample(erp.exponentialERP, [a]);
+var exponential = function(name, a) {
+  return sample(name, erp.exponentialERP, [a]);
 };
 
-var gamma = function(shape, scale) {
-  return sample(erp.gammaERP, [shape, scale]);
+var gamma = function(name, shape, scale) {
+  return sample(name, erp.gammaERP, [shape, scale]);
 };
 
-// var deltaERP = function(v) {
-//   return erp.makeDeltaERP(v);
-// }
-
-// var multiplexERP = function(vs, erps) {
-//   return erp.makeMultiplexERP(vs, erps);
-// }
 
 module.exports.flip = flip;
 module.exports.randomInteger = randomInteger;
