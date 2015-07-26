@@ -44,14 +44,16 @@ Trace.prototype = {
 		}
 		this.returnVal = otherTrace.returnVal;
 	},
-	erpScoreRaw: function(erp, params, val) {
+	erpScoreRaw: function(erp, params, val, newchoice) {
 		var score = erp.score(params, val);
 		this.score += score;
+		if (newchoice) this.newlp += score;
 		return score;
 	},
-	erpScoreAD: function(erp, params, val) {
+	erpScoreAD: function(erp, params, val, newchoice) {
 		var score = erp.adscore(params, val);
 		this.score = ad_add(this.score, score);
+		if (newchoice) this.newlp = ad_add(this.newlp, score);
 		return score;
 	},
 	sample: function(name, erp, params) {
@@ -61,12 +63,12 @@ Trace.prototype = {
 			//    re-running with the target program works correctly.
 			var pparams = params.map(function(x) { return primal(x); });
 			var val = erp.sample(pparams);
-			c = { val: val, erp: erp, params: params, score: this.erpScore(erp, params, val), reachable: true };
+			var score = this.erpScore(erp, params, val, true);
+			c = { val: val, erp: erp, params: params, score: score, reachable: true };
 			this.choices[name] = c;
 			this.numChoices++;
-			this.newlp += c.score;
 		} else {
-			c.score = this.erpScore(erp, params, val);
+			c.score = this.erpScore(erp, params, c.val, false);
 			c.reachable = true;
 		}
 		return c.val;
@@ -89,7 +91,7 @@ Trace.prototype = {
 		this.factor = (ad ? this.factorAD : this.factorRaw);
 		var oldCoroutine = coroutine;
 		coroutine = this;
-		this.returnVal = thunk();
+		this.returnVal = thunk(this);
 		coroutine = oldCoroutine
 		return this.returnVal;
 	},
@@ -129,9 +131,9 @@ Trace.prototype = {
 		// Accept/reject
 		fwdLP += this.newlp - Math.log(oldTrace.numChoices);
 		rvsLP += oldlp - Math.log(this.numChoices);
-		var acceptProb = Math.min(1.0, Math.exp(this.score - oldScore + rvsLP - fwdLP));
+		var acceptProb = Math.min(1.0, Math.exp(this.score - oldTrace.score + rvsLP - fwdLP));
 		// console.log('-----------------');
-		// console.log('newScore: ' + this.score + ', oldScore: ' + oldScore);
+		// console.log('newScore: ' + this.score + ', oldScore: ' + oldTrace.score);
 		// console.log('fwdLP: ' + fwdLP + ', rvsLP: ' + rvsLP);
 		// console.log('acceptProb: ', acceptProb);
 		if (Math.random() < acceptProb) {
@@ -155,7 +157,7 @@ function makeGuideThunk(guide, params, args) {
 		return guide(params, args);
 	};
 }
-function makeGuideGradThunk(trace, guide, params, args) {
+function makeGuideGradThunk(guide, params, args) {
 	var objMap = function(obj, f) {
 	  var newobj = {};
 	  for (var prop in obj)
@@ -164,7 +166,7 @@ function makeGuideGradThunk(trace, guide, params, args) {
 	}
 	// This sort of violates the AD abstraction barrier,
 	//    but I can't think of any other way to do it.
-	return function() {
+	return function(trace) {
 		params.values = objMap(params.values, function(p) {
 			return ad_maketape(p);
 		});
@@ -244,7 +246,7 @@ function infer(target, guide, args, opts) {
 
 	var targetThunk = makeTargetThunk(target, args);
 	var guideThunk = makeGuideThunk(guide, params, args);
-	var guideGradThunk = makeGuideGradThunk(trace, guide, params, args);
+	var guideGradThunk = makeGuideGradThunk(guide, params, args);
 
 	// Prep step stats, if requested
 	var stepStats = null;
@@ -278,10 +280,6 @@ function infer(target, guide, args, opts) {
 		var sumWeightedGrad = {};
 		var sumGradSq = {};
 		var sumWeightedGradSq = {};
-		// var sumGrad = numeric.rep([nParams], 0.0);
-		// var sumWeightedGrad = numeric.rep([nParams], 0.0);
-		// var sumWeightedGradSq = numeric.rep([nParams], 0.0);
-		// var sumGradSq = numeric.rep([nParams], 0.0);
 		// Draw samples from the guide, score using the target
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
@@ -302,36 +300,39 @@ function infer(target, guide, args, opts) {
 			for (var name in grad) {
 				var g = grad[name];
 				if (!sumGrad.hasOwnProperty(name)) {
-					sumGrad[name] = numeric.rep([g.length], 0.0);
-					sumWeightedGrad[name] = numeric.rep([g.length], 0.0);
-					sumGradSq[name] = numeric.rep([g.length], 0.0);
-					sumWeightedGradSq[name] = numeric.rep([g.length], 0.0);
+					sumGrad[name] = 0.0;
+					sumWeightedGrad[name] = 0.0;
+					sumGradSq[name] = 0.0;
+					sumWeightedGradSq[name] = 0.0;
 				}
-				var weightedGrad = numeric.mul(g, scoreDiff);
-				numeric.addeq(sumGrad[name], g);
-				numeric.addeq(sumWeightedGrad[name], weightedGrad);
-				numeric.poweq(g, 2);	// g is now g^2
-				numeric.addeq(sumGradSq[name], g);
-				var weightedGradSq = numeric.mul(g, scoreDiff)
-				numeric.addeq(sumWeightedGradSq[name], weightedGradSq);
+				sumGrad[name] += g;
+				var weightedGrad = g * scoreDiff;
+				sumWeightedGrad[name] += weightedGrad;
+				var gSq = g*g;
+				sumGradSq[name] += gSq;
+				var weightedGradSq = gSq * scoreDiff;
+				sumWeightedGradSq[name] += weightedGradSq;
 			}
 		}
 		// Compute AdaGrad learning rate and control variate,
 		//    then do parameter update
 		var elboGradEst = {};
-		for (var name in sumGrad) {
-			if (componentWiseAStar) {
-				var aStar = numeric.div(sumWeightedGradSq[name], sumGradSq[name]);
-				numeric.muleq(aStar, sumGrad[name]);
-				elboGradEst[name] = numeric.sub(sumWeightedGrad[name], aStar);
-			} else {
-				var numerSum = numeric.sum(sumWeightedGradSq[name]);
-				var denomSum = numeric.sum(sumGradSq[name]);
-				var aStar = numerSum / denomSum;
-				var offset = numeric.mul(sumGrad[name], aStar);
-				elboGradEst[name] = numeric.sub(sumWeightedGrad[name], offset);
+		if (componentWiseAStar) {
+			for (var name in sumGrad) {
+				var aStar = sumWeightedGradSq[name] / sumGradSq[name];
+				elboGradEst[name] = (sumWeightedGrad[name] - sumGrad[name]*aStar)/nSamples;;
 			}
-			numeric.muleq(elboGradEst, 1.0/nSamples);
+		} else {
+			var numerSum = 0.0;
+			var denomSum = 0.0;
+			for (var name in sumGrad) {
+				numerSum += sumWeightedGradSq[name];
+				denomSum += sumGradSq[name];
+			}
+			var aStar = numerSum / denomSum;
+			for (var name in sumGrad) {
+				elboGradEst[name] = (sumWeightedGrad[name] - sumGrad[name]*aStar)/nSamples;
+			}
 		}
 		if (verbosity > 2) {
 			console.log('  sumGrad: ' +  JSON.stringify(sumGrad));
@@ -406,12 +407,12 @@ function infer(target, guide, args, opts) {
 			for (var name in gradient) {
 				var g = gradient[name];
 				if (!gradEst.hasOwnProperty(name))
-					gradEst[name] = numeric.rep([g.length], 0.0);
-				numeric.addeq(gradEst[name], g);
+					gradEst[name] = 0.0;
+				gradEst[name] += g;
 			}
 		}
 		for (var name in gradEst)
-			numeric.diveq(gradEst[name], nSamples);
+			gradEst[name] /= nSamples;
 		if (verbosity > 2) {
 			console.log('  gradEst: ' +  JSON.stringify(gradEst));
 		}
@@ -459,28 +460,27 @@ function infer(target, guide, args, opts) {
 			stepStats.eubo.push(euboEst);
 		}
 		var maxDelta = 0;
-		for (var name in params) {
+		for (var name in gradEst) {
 			var grad = gradEst[name];
 			if (!runningG2.hasOwnProperty(name))
-				runningG2[name] = numeric.rep([grad.length], 0.0);
-			var rg2 = runningG2[name];
-			for (var i = 0; i < grad.length; i++) {
-				var g = grad[i];
-				rg2[i] += g*g;
-				var weight = learnRate / Math.sqrt(rg2[i]);
-				assert(isFinite(weight),
-					'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
-				var delta = weight * g;
-				var p0 = params.values[name][i];
-				var p1 = p0 + delta;
-				params.values[name][i] = regularize(p0, p1, weight);
-				// When recording changes, do this in the transformed space
-				if (params.transforms[name][i] !== undefined) {
-					var t = params.transforms[name][i];
-					delta = t(p1) - t(p0);
-				}
-				maxDelta = Math.max(Math.abs(delta), maxDelta);
+				runningG2[name] = 0.0;
+			runningG2[name] += grad*grad;
+			var weight = learnRate / Math.sqrt(runningG2[name]);
+			if (!isFinite(weight)) {
+				console.log('name: ' + name);
+				console.log('grad: ' + grad);
 			}
+			assert(isFinite(weight),
+				'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
+			var delta = weight * grad;
+			var p0 = params.values[name];
+			var p1 = p0 + delta;
+			params.values[name] = regularize(p0, p1, weight);
+			// When recording changes, do this in the transformed space
+			var t = params.transforms[name];
+			if (t !== undefined)
+				delta = t(p1) - t(p0);
+			maxDelta = Math.max(Math.abs(delta), maxDelta);
 		}
 		// Check for convergence
 		maxDeltaAvg = maxDeltaAvg * 0.9 + maxDelta;
