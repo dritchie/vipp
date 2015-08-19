@@ -1,0 +1,76 @@
+// Run with: ../webppl/webppl sandbox/circles.wppl --require-js sandbox/drawCircles.js 
+
+var nPoints = 6;
+var targetDist = 0.5;
+// var tightness = 0.1;
+var tightness = 0.01;
+
+var sub = function(p0, p1) {
+	return [
+		p0[0] - p1[0],
+		p0[1] - p1[1]
+	];
+}
+
+var dot = function(p0, p1) {
+	return p0[0]*p1[0] + p0[1]*p1[1];
+}
+
+var norm = function(p) {
+	return Math.sqrt(dot(p, p));
+}
+
+var dist = function(p0, p1) {
+	return norm(sub(p0, p1));
+}
+
+var samplePoints = function(n) {
+	if (n === 0) return [];
+	else return [
+		[gaussian(0.0, 2.0),
+		gaussian(0.0, 2.0)]
+	].concat(samplePoints(n-1));
+}
+
+var forEach = function(stuff, fn) {
+	var _forEach = function(i) {
+		if (i < stuff.length) {
+			fn(i, stuff[i]);
+			_forEach(i + 1);
+		}
+	}
+	_forEach(0);
+}
+
+var program = function() {
+	// Sample some random points
+	var points = samplePoints(nPoints)
+	// Encourage subsequent points to be some distance apart
+	forEach(points, function(i, p) {
+		var p0 = points[i];
+		var p1 = points[(i+1) % nPoints];
+		var d = dist(p0, p1);
+		factor(gaussianERP.score([targetDist, tightness], d));
+	});
+	// Encourage point triples to be as-linear-as-possible
+	forEach(points, function(i, p) {
+		var p0 = points[i];
+		var p1 = points[(i+1) % nPoints];
+		var p2 = points[(i+2) % nPoints];
+		var v0 = sub(p0, p1);
+		var v1 = sub(p2, p1);
+		var d = dot(v0, v1) / (norm(v0) * norm(v1));
+		factor(gaussianERP.score([-1.0, tightness], d));
+	});
+	return points;
+}
+
+var drawResults = function(i) {
+	if (i > 0) {
+		var result = HashMH(program, 1000);
+		drawCircles.drawCircles(result.MAP, 0.1, 800, 800, [-3, -3, 3, 3], 'circlesMAP_' + i + '.png');
+		drawResults(i - 1);
+	}
+};
+drawResults(10);
+// drawResults(1);
