@@ -3,15 +3,16 @@
 
 
 var adtransform = require('./ad/transform.js').transform;
+var namingtransform = require('./naming/naming.js').transform;
 
 
-function compile(code, doADtransform) {
-	doADtransform = doADtransform === undefined ? true : doADtransform;
-	// AD and eval the code to get a callable thunk
-	if (doADtransform) code = adtransform(code);
+function compile(code) {
+	// Apply source transforms
+	code = '(function() {\n' + code + '\n})\n';
+	code = namingtransform(code);
+	code = adtransform(code);
 	// Eval the code to get a callable thunk
-	var wrappedcode = '(function() {\n' + code + '\n})\n';
-	var fn = eval(wrappedcode);
+	var fn = eval(code);
 	return function() {
 		// Install header + AD stuff into the global environment.
 		var oldG = {};
@@ -26,7 +27,7 @@ function compile(code, doADtransform) {
 			global[prop] = header[prop];
 		}
 		// Run the code.
-		var ret = fn();
+		var ret = fn('');
 		// Restore the global environment.
 		for (var prop in oldG)
 			global[prop] = oldG[prop];

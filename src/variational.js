@@ -17,7 +17,7 @@ var coroutine = {
 	sample: function(name, erp, params) {
 		return erp.sample(params);
 	},
-	factor: function(num) {}
+	factor: function(name, num) {}
 };
 
 
@@ -73,10 +73,10 @@ Trace.prototype = {
 		}
 		return c.val;
 	},
-	factorRaw: function(num) {
+	factorRaw: function(name, num) {
 		this.score += num;
 	},
-	factorAD: function(num) {
+	factorAD: function(name, num) {
 		this.score = ad_add(this.score, num);
 	},
 	run: function(thunk, ad) {
@@ -147,17 +147,17 @@ Trace.prototype = {
 
 
 // Thunks that we'll feed to 'run' and 'rerun'
-function makeTargetThunk(target, args) {
+function makeTargetThunk(basename, target, args) {
 	return function() {
-		return target(args);
+		return target(basename, args);
 	};
 }
-function makeGuideThunk(guide, params, args) {
+function makeGuideThunk(basename, guide, params, args) {
 	return function() {
-		return guide(params, args);
+		return guide(basename, params, args);
 	};
 }
-function makeGuideGradThunk(guide, params, args) {
+function makeGuideGradThunk(basename, guide, params, args) {
 	var objMap = function(obj, f) {
 	  var newobj = {};
 	  for (var prop in obj)
@@ -170,7 +170,7 @@ function makeGuideGradThunk(guide, params, args) {
 		params.values = objMap(params.values, function(p) {
 			return ad_maketape(p);
 		});
-		guide(params, args);
+		guide(basename, params, args);
 		trace.score.determineFanout();
       	trace.score.reversePhase(1.0);
       	var gradient = objMap(params.values, function(p) {
@@ -189,7 +189,7 @@ function makeGuideGradThunk(guide, params, args) {
 // args: inputs to program (i.e. observed evidence)
 // opts: options controlling inference behavior
 // Returns the inferred variational params
-function infer(target, guide, args, opts) {
+function infer(name, target, guide, args, opts) {
 	// Extract options
 	opts = opts || {};
 	function opt(val, defaultval) {
@@ -244,9 +244,9 @@ function infer(target, guide, args, opts) {
 
 	var params = makeParams();
 
-	var targetThunk = makeTargetThunk(target, args);
-	var guideThunk = makeGuideThunk(guide, params, args);
-	var guideGradThunk = makeGuideGradThunk(guide, params, args);
+	var targetThunk = makeTargetThunk(name, target, args);
+	var guideThunk = makeGuideThunk(name, guide, params, args);
+	var guideGradThunk = makeGuideGradThunk(name, guide, params, args);
 
 	// Prep step stats, if requested
 	var stepStats = null;
@@ -516,8 +516,8 @@ function sample(name, erp, params) {
 	return coroutine.sample(name, erp, params);
 }
 
-function factor(num) {
-	coroutine.factor(num);
+function factor(name, num) {
+	coroutine.factor(name, num);
 }
 
 // Create/lookup a param.
