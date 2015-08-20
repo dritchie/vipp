@@ -44,7 +44,10 @@ var uniformERP = new ERP(
       var u = Math.random();
       return (1 - u) * params[0] + u * params[1];
     },
-    scorers.uniform
+    scorers.uniform,
+    {
+      adscore: adscorers.uniform
+    }
     );
 
 var bernoulliERP = new ERP(
@@ -114,13 +117,13 @@ var gaussianERP = new ERP(gaussianSample, scorers.gaussian, {
 
 var discreteERP = new ERP(
     function discreteSample(params) {
-      return multinomialSample(params[0]);
+      return multinomialSample(params);
     },
     scorers.discrete,
     {
       support:
           function discreteSupport(params) {
-            return _.range(params[0].length);
+            return _.range(params.length);
           },
       adscore: adscorers.discrete
     }

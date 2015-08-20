@@ -46,7 +46,7 @@ function normalizeArray(xs) {
 }
 
 function discreteScore(params, val) {
-  var probs = normalizeArray(params[0]);
+  var probs = normalizeArray(params);
   var stop = probs.length;
   var inSupport = (val == Math.floor(val)) && (0 <= val) && (val < stop);
   return inSupport ? Math.log(probs[val]) : -Infinity;

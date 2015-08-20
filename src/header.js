@@ -20,8 +20,8 @@ var randomInteger = function(name, n) {
   return sample(name, erp.randomIntegerERP, [n]);
 };
 
-var discrete = function(name, n) {
-  return sample(name, erp.discreteERP, [n]);
+var discrete = function(name, theta) {
+  return sample(name, erp.discreteERP, theta);
 };
 
 var categorical = function(name, ps, vs) {
