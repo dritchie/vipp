@@ -182,7 +182,9 @@ function makeGuideGradThunk(basename, guide, params, args) {
 		});
 		guide(basename, params, args);
 		trace.score.determineFanout();
+		// trace.score.reversePhaseDebug(1.0);
       	trace.score.reversePhase(1.0);
+      	// trace.score.print();
       	var gradient = objMap(params.values, function(p) {
       		return p.sensitivity;
       	});
