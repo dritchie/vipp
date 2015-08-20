@@ -64,6 +64,14 @@ Trace.prototype = {
 			var pparams = params.map(function(x) { return primal(x); });
 			var val = erp.sample(pparams);
 			var score = this.erpScore(erp, params, val, true);
+			if (!isFinite(primal(score))) {
+				console.log('name: ' + name);
+				console.log('val: ' + val);
+				console.log('params: ' + pparams);
+				console.log('scorer: ' + erp.score.name);
+				console.log('score: ' +  primal(score));
+				assert(false, 'ERP has non-finite score!');
+			}
 			c = { val: val, erp: erp, params: params, score: score, reachable: true };
 			this.choices[name] = c;
 			this.numChoices++;
@@ -75,9 +83,11 @@ Trace.prototype = {
 	},
 	factorRaw: function(name, num) {
 		this.score += num;
+		assert(isFinite(primal(num)), 'Factor has non-finite score!');
 	},
 	factorAD: function(name, num) {
 		this.score = ad_add(this.score, num);
+		assert(isFinite(primal(num)), 'Factor has non-finite score!');
 	},
 	run: function(thunk, ad) {
 		this.choices = {};
@@ -295,8 +305,12 @@ function infer(name, target, guide, args, opts) {
 					+ ', diff: ' + scoreDiff);
 				console.log('    grad: ' + JSON.stringify(grad));
 			}
-			assert(isFinite(scoreDiff),
-				'Detected non-finite score(s)! ERP params have probably moved outside their support...');
+			if (!isFinite(scoreDiff)) {
+				console.log('targetScore: ' + targetScore);
+				console.log('guideScore: ' + guideScore);
+				assert(false,
+					'Detected non-finite score(s)! But this should have been caught by sample or factor...');
+			}
 			for (var name in grad) {
 				var g = grad[name];
 				if (!sumGrad.hasOwnProperty(name)) {
@@ -469,9 +483,9 @@ function infer(name, target, guide, args, opts) {
 			if (!isFinite(weight)) {
 				console.log('name: ' + name);
 				console.log('grad: ' + grad);
-			}
-			assert(isFinite(weight),
+				assert(false,
 				'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
+			}
 			var delta = weight * grad;
 			var p0 = params.values[name];
 			var p1 = p0 + delta;
