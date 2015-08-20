@@ -10,10 +10,11 @@ function compile(code) {
 	// Apply source transforms
 	code = '(function() {\n' + code + '\n})\n';
 	code = namingtransform(code);
+	// require('fs').writeFileSync('test.js', code);
 	code = adtransform(code);
 	// Eval the code to get a callable thunk
 	var fn = eval(code);
-	return function() {
+	var thunk = function() {
 		// Install header + AD stuff into the global environment.
 		var oldG = {};
 		var ad = require('./ad/functions');
@@ -34,6 +35,11 @@ function compile(code) {
 		// Return
 		return ret;
 	}
+	// Return the thunk and the code
+	return {
+		fn: thunk,
+		code: code
+	};
 }
 
 

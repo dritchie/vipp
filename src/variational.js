@@ -476,16 +476,17 @@ function infer(name, target, guide, args, opts) {
 		var maxDelta = 0;
 		for (var name in gradEst) {
 			var grad = gradEst[name];
+			if (grad === 0.0) {
+				console.log('name: ' + name);
+				console.log('grad: ' + grad);
+				assert(false,
+				'Detected a zero in the gradient!');
+			}
 			if (!runningG2.hasOwnProperty(name))
 				runningG2[name] = 0.0;
 			runningG2[name] += grad*grad;
 			var weight = learnRate / Math.sqrt(runningG2[name]);
-			if (!isFinite(weight)) {
-				console.log('name: ' + name);
-				console.log('grad: ' + grad);
-				assert(false,
-				'Detected non-finite AdaGrad weight! There are probably zeroes in the gradient...');
-			}
+			assert(isFinite(weight), "Detected non-finite AdaGrad weight!");
 			var delta = weight * grad;
 			var p0 = params.values[name];
 			var p1 = p0 + delta;
@@ -493,7 +494,7 @@ function infer(name, target, guide, args, opts) {
 			// When recording changes, do this in the transformed space
 			var t = params.transforms[name];
 			if (t !== undefined)
-				delta = t(p1) - t(p0);
+				delta = t.fwd(p1) - t.fwd(p0);
 			maxDelta = Math.max(Math.abs(delta), maxDelta);
 		}
 		// Check for convergence
@@ -542,13 +543,14 @@ function param(name, params, initialVal, transform, sampler, hypers) {
 	if (!params.values.hasOwnProperty(name)) {
 		if (initialVal === undefined)
 			initialVal = sampler(hypers);
+		if (transform !== undefined)
+			initialVal = transform.rvs(initialVal);
 		params.values[name] = ad_maketape(primal(initialVal));
 		params.transforms[name] = transform;
 	}
-	var t = params.transforms[name];
 	var p = params.values[name];
-	if (t !== undefined)
-		return t(p);
+	if (transform !== undefined)
+		return transform.fwd(p);
 	else
 		return p;
 }

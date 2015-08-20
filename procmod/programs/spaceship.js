@@ -7,6 +7,11 @@ var map = function(fn, ar) {
   return ar.length === 0 ? [] : [fn(ar[0])].concat(map(fn, ar.slice(1)));
 };
 
+var expTransform = {
+	fwd: Math.exp,
+	rvs: Math.log
+};
+
 var makeProgram = function(isGuide) {
 
 	var globalStore = {};
@@ -40,13 +45,12 @@ var makeProgram = function(isGuide) {
 
 	// ----------------------------------------------------------------------------
 
+	// Parameter function
 	var prm;
 
 	var _uniform = function(lo, hi) {
-		// return uniform(prm(lo), prm(hi));
 		var p1 = prm(lo);
-		var p2 = prm(Math.log(hi - lo), Math.exp);
-		// var p2 = isGuide ? prm(Math.log(hi - lo), Math.exp) : hi - lo;	// This kind of sucks...
+		var p2 = prm(hi - lo, expTransform);
 		return uniform(p1, p1 + p2);
 	}
 
