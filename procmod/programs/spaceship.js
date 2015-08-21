@@ -1,7 +1,6 @@
 var THREE = require('three');
-// var ModelStates = require('procmod/lib/modelstates');
 var Geo = require('procmod/lib/geometry');
-var SpaceshipGeo = require('procmod/programs/spaceshipGeo');
+var SpaceshipUtil = require('procmod/programs/spaceshipUtil');
 var bounds = require('src/boundsTransforms');
 
 
@@ -14,30 +13,10 @@ var makeProgram = function(isGuide) {
 
 	var globalStore = {};
 
-	// Create a new model state
-	var newState = function()
-	{
-		// State which tracks the voxelized model
-		// (Assumes availability of global 'voxparams')
-		// return ModelStates.Sequential.Voxelizing.create(voxparams);
-
-		// Simpler state which just tracks self-intersections
-		// return ModelStates.Sequential.NonIntersecting.create();
-
-		return [];
-	}
-
 	// Add geometry to an existing model state
 	var addGeometry = function(geo)
 	{
-		// var currstate = globalStore.modelState;
-		// var newstate = currstate.addGeometry(geo);
-		// globalStore.modelState = newstate;
-		// // This extra bit of logic is to prevent NaNs (from -Infinity - -Infinity calculations)
-		// var score = (currstate.score == -Infinity) ? -Infinity : (newstate.score - currstate.score);
-		// factor(score);
-
-		globalStore.modelState = globalStore.modelState.concat([geo]);
+		globalStore.geometry = globalStore.geometry.concat([geo]);
 	}
 
 
@@ -92,9 +71,9 @@ var makeProgram = function(isGuide) {
 		var xlen = radius*2;
 		var ylen = radius*2;
 		var zlen = isnose ? _uniform(1, 3) : _uniform(2, 5);
-		var geo = isnose ? SpaceshipGeo.BodyCylinder(rearz, zlen, radius,
+		var geo = isnose ? SpaceshipUtil.BodyCylinder(rearz, zlen, radius,
 													 radius*_uniform(.25, .75))
-						 : SpaceshipGeo.BodyCylinder(rearz, zlen, radius);
+						 : SpaceshipUtil.BodyCylinder(rearz, zlen, radius);
 		addGeometry(geo);
 		return { xlen: xlen, ylen: ylen, zlen: zlen, type: BodyType.Cylinder };
 	}
@@ -109,7 +88,7 @@ var makeProgram = function(isGuide) {
 		var xlen = radius*4;
 		var ylen = radius*4;
 		var zlen = _uniform(2, 5);
-		var geo = SpaceshipGeo.BodyCluster(rearz, zlen, radius);
+		var geo = SpaceshipUtil.BodyCluster(rearz, zlen, radius);
 		addGeometry(geo);
 		return { xlen: xlen, ylen: ylen, zlen: zlen, type: BodyType.Cluster };
 	}
@@ -134,7 +113,7 @@ var makeProgram = function(isGuide) {
 		var xlen = _uniform(0.25, 2.0);
 		var ylen = _uniform(0.25, 1.25);
 		var zlen = _uniform(0.5, 4.0);
-		var geo = SpaceshipGeo.WingBoxes(xbase, zbase, xlen, ylen, zlen);
+		var geo = SpaceshipUtil.WingBoxes(xbase, zbase, xlen, ylen, zlen);
 		addGeometry(geo);
 		if (_flip(0.5))
 			addWingGuns(xbase, zbase, xlen, ylen, zlen);
@@ -146,7 +125,7 @@ var makeProgram = function(isGuide) {
 		var gunlen = _uniform(1, 1.2)*zlen;
 		var gunxbase = xbase + 0.5*xlen;
 		var gunybase = 0.5*ylen;
-		var geo = SpaceshipGeo.WingGuns(gunxbase, gunybase, zbase, gunlen);
+		var geo = SpaceshipUtil.WingGuns(gunxbase, gunybase, zbase, gunlen);
 		addGeometry(geo);
 	};
 
@@ -157,7 +136,7 @@ var makeProgram = function(isGuide) {
 		var xlen = 2*radius;
 		var ylen = 2*radius;
 		var zlen = _uniform(1, 5);
-		var geo = SpaceshipGeo.WingCylinders(xbase, zbase, zlen, radius);
+		var geo = SpaceshipUtil.WingCylinders(xbase, zbase, zlen, radius);
 		addGeometry(geo);
 		return { xlen: xlen, ylen: ylen, zlen: zlen, zbase: zbase };
 	}
@@ -230,9 +209,24 @@ var makeProgram = function(isGuide) {
 	// ----------------------------------------------------------------------------
 
 	var _factor = isGuide ? function() {} : factor;
+
 	var gaussFactor = function(x, mu, sigma) {
 		_factor(gaussianERP.score([mu, sigma], x));
 	}
+
+	var numIntersections = function(geolist) {
+		var n = 0;
+		for (var i = 0; i < geolist.length-1; i++) {
+			for (var j = i+1; j < geolist.length; j++) {
+				if (geolist[i].intersects(geolist[j])) {
+					n++;
+				}
+			}
+		}
+		return n;
+	};
+
+	// ----------------------------------------------------------------------------
 
 	// This is the 'main' function of the program
 	var generate = function(params)
@@ -242,13 +236,13 @@ var makeProgram = function(isGuide) {
 		else
 			prm = function(x) { return x; };
 
-		globalStore.modelState = newState();
+		globalStore.geometry = [];
 		addBody(0, -5, {type: null, xlen: 0, ylen: 0});
 
 		// Encourage desired aspect ratio
 		var bbox = new THREE.Box3();
-		for (var i = 0; i < globalStore.modelState.length; i++)
-			bbox.union(globalStore.modelState[i].getbbox());
+		for (var i = 0; i < globalStore.geometry.length; i++)
+			bbox.union(globalStore.geometry[i].getbbox());
 		var size = bbox.size();
 		// var targetWidth = 10;
 		// var targetLength = 10;
@@ -257,7 +251,11 @@ var makeProgram = function(isGuide) {
 		gaussFactor(size.x, targetWidth, 0.1);
 		gaussFactor(size.z, targetLength, 0.1);
 
-		return globalStore.modelState;
+		// Discourage self-intersection
+		var nisects = numIntersections(globalStore.geometry);
+		gaussFactor(nisects, 0, 0.1);
+
+		return globalStore.geometry;
 	}
 
 	return generate;
