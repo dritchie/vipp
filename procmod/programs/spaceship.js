@@ -287,7 +287,7 @@ var result = variational.infer(target, guide, undefined, {
 	initLearnrate: 0.5
 });
 var SU = require('procmod/programs/spaceshipUtil');
-SU.genAndSave(guide, result.params, 10, 'test_');
+SU.genAndSave(guide, result.params, 10, 'test.obj');
 
 
 
