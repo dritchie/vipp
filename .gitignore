@@ -1,6 +1,7 @@
 node_modules
 sandbox/results/*
 erp_scorers.js
+boundsTransforms.js
 experiments/adTest/*.csv
 experiments/convergence/*.csv
 *.png

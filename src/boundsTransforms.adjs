@@ -1,0 +1,15 @@
+
+var nonNegative = {
+	fwd: Math.exp,
+	rvs: Math.log
+};
+
+var unitInterval = {
+	fwd: function(x) { return 1 / (1 + Math.exp(-x)); },
+	rvs: function(x) { return -Math.log(1/x - 1); }
+};
+
+module.exports = {
+	nonNegative: nonNegative,
+	unitInterval: unitInterval
+}

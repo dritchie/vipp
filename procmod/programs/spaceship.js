@@ -1,16 +1,14 @@
+var THREE = require('three');
 // var ModelStates = require('procmod/lib/modelstates');
 var Geo = require('procmod/lib/geometry');
 var SpaceshipGeo = require('procmod/programs/spaceshipGeo');
-var THREE = require('three');
+var bounds = require('src/boundsTransforms');
+
 
 var map = function(fn, ar) {
   return ar.length === 0 ? [] : [fn(ar[0])].concat(map(fn, ar.slice(1)));
 };
 
-var expTransform = {
-	fwd: Math.exp,
-	rvs: Math.log
-};
 
 var makeProgram = function(isGuide) {
 
@@ -49,31 +47,26 @@ var makeProgram = function(isGuide) {
 	var prm;
 
 	var _uniform = function(lo, hi) {
-		var p1 = prm(lo);
-		var p2 = prm(hi - lo, expTransform);
-		return uniform(p1, p1 + p2);
+		// var u = uniform(prm(0), prm(1));		// Doesn't work
+		var u = beta(prm(1.0, bounds.nonNegative), prm(1.0, bounds.nonNegative));
+		return (1.0-u)*lo + u*hi;
 	}
 
 	var _flip = function(p) {
-		return flip(prm(p));
+		p = Math.min(Math.max(0.01, p), 0.99);  // Can't be exactly 0 or exactly 1
+		return flip(prm(p, bounds.unitInterval));
 	}
 
 	var _discrete = function(probs) {
-		return discrete(map(function(x) { return prm(x); }, probs));
+		return discrete(map(function(x) { return prm(x, bounds.unitInterval); }, probs));
 	}
-
-	var _uniformrel = function(lo, hi)
-	{
-		var u = _uniform(0, 1);
-		return (1-u)*lo + u*hi;
-	}
-
-	var wi = function(i, w) { return Math.exp(-w*i); }
 
 
 	// ----------------------------------------------------------------------------
 
 	// Subroutines for random spaceship geometry generation.
+
+	var wi = function(i, w) { return Math.exp(-w*i); }
 
 	var addBoxBodySeg = function(rearz, prev)
 	{
@@ -95,7 +88,7 @@ var makeProgram = function(isGuide) {
 		var limitrad = 0.5*Math.min(prev.xlen, prev.ylen);
 		var minrad = (prev.type === BodyType.Box) ? 0.4*limitrad : 0.3;
 		var maxrad = (prev.type === BodyType.Box) ? limitrad : 1.25;
-		var radius = _uniformrel(minrad, maxrad);
+		var radius = _uniform(minrad, maxrad);
 		var xlen = radius*2;
 		var ylen = radius*2;
 		var zlen = isnose ? _uniform(1, 3) : _uniform(2, 5);
@@ -112,7 +105,7 @@ var makeProgram = function(isGuide) {
 		var limitrad = 0.25*Math.min(prev.xlen, prev.ylen);
 		var minrad = (prev.type === BodyType.Box) ? 0.4*limitrad : 0.5*0.3;
 		var maxrad = (prev.type === BodyType.Box) ? limitrad : 0.5*1.25;
-		var radius = _uniformrel(minrad, maxrad);
+		var radius = _uniform(minrad, maxrad);
 		var xlen = radius*4;
 		var ylen = radius*4;
 		var zlen = _uniform(2, 5);
@@ -132,12 +125,12 @@ var makeProgram = function(isGuide) {
 			return addCylinderBodySeg(rearz, prev);
 		else if (type == BodyType.Cluster)
 			return addClusterBodySeg(rearz, prev);
-		else throw('unsupported body type');
+		else throw('unsupported body type ' + type);
 	}
 
 	var addBoxWingSeg = function(xbase, zlo, zhi)
 	{
-		var zbase = _uniformrel(zlo, zhi);
+		var zbase = _uniform(zlo, zhi);
 		var xlen = _uniform(0.25, 2.0);
 		var ylen = _uniform(0.25, 1.25);
 		var zlen = _uniform(0.5, 4.0);
@@ -159,7 +152,7 @@ var makeProgram = function(isGuide) {
 
 	var addCylinderWingSeg = function(xbase, zlo, zhi)
 	{
-		var zbase = _uniformrel(zlo, zhi);
+		var zbase = _uniform(zlo, zhi);
 		var radius = _uniform(.15, .7);
 		var xlen = 2*radius;
 		var ylen = 2*radius;
@@ -178,7 +171,7 @@ var makeProgram = function(isGuide) {
 			return addBoxWingSeg(xbase, zlo, zhi);
 		else if (type == WingType.Cylinder)
 			return addCylinderWingSeg(xbase, zlo, zhi);
-		else throw('unsupported wing type');
+		else throw('unsupported wing type ' + type);
 	}
 
 	var addWings = function(i, xbase, zlo, zhi)
@@ -283,25 +276,16 @@ var makeProgram = function(isGuide) {
 // Mean field variational test
 var target = makeProgram(false);
 var guide = makeProgram(true);
-var result = infer(target, guide, undefined, {
+var result = variational.infer(target, guide, undefined, {
 	verbosity: 2,
+	// nSamples: 1,
 	nSamples: 100,
-	nSteps: 1000,
+	nSteps: 100,
 	convergeEps: 0.1,
 	initLearnrate: 0.5
 });
-var utils = require('procmod/lib/utils');
-for (var i = 0; i < 10; i++) {
-	var geolist = guide(result.params);
-	var accumgeo = new Geo.Geometry();
-	for (var i = 0; i < geolist.length; i++)
-		accumgeo.merge(geolist[i]);
-	var size = accumgeo.getbbox().size();
-	console.log(size.x, size.z);
-	utils.saveOBJ(accumgeo, 'test_' + i + '.obj');
-}
-
-
+var SU = require('procmod/programs/spaceshipUtil');
+SU.genAndSave(guide, result.params, 10, 'test_');
 
 
 

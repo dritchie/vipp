@@ -6,11 +6,6 @@ var assert = require('assert');
 var _ = require('underscore');
 
 
-// Get the primal value of a dual number/tape
-function primal(x) {
-	return x.primal === undefined ? x : x.primal;
-}
-
 
 // Global inference coroutine
 var coroutine = {
@@ -24,7 +19,8 @@ var coroutine = {
 function makeParams() {
 	return {
 		values: {},
-		transforms: {}
+		transforms: {},
+		used: {}
 	};
 }
 
@@ -44,15 +40,37 @@ Trace.prototype = {
 		}
 		this.returnVal = otherTrace.returnVal;
 	},
-	erpScoreRaw: function(erp, params, val, newchoice) {
+	erpScoreRaw: function(name, erp, params, val, newchoice) {
 		var score = erp.score(params, val);
+		var oldscore = this.score;
 		this.score += score;
+		if (!isFinite(score)) {
+			console.log('name: ' + name);
+			console.log('val: ' + val);
+			console.log('params: ' + params);
+			console.log('scorer: ' + erp.score.name);
+			console.log('oldscore: ' + oldscore);
+			console.log('ERP score: ' +  score);
+			console.log('new score: ' + this.score);
+			assert(false, 'ERP has non-finite score in target!');
+		}
 		if (newchoice) this.newlp += score;
 		return score;
 	},
-	erpScoreAD: function(erp, params, val, newchoice) {
+	erpScoreAD: function(name, erp, params, val, newchoice) {
 		var score = erp.adscore(params, val);
+		var oldscore = this.score;
 		this.score = ad_add(this.score, score);
+		if (!isFinite(ad_primal(score))) {
+			console.log('name: ' + name);
+			console.log('val: ' + val);
+			console.log('params: ' + params.map(function(x) {return ad_primal(x);}));
+			console.log('scorer: ' + erp.score.name);
+			console.log('oldscore: ' + ad_primal(oldscore));
+			console.log('ERP score: ' +  ad_primal(score));
+			console.log('new score: ' + ad_primal(this.score));
+			assert(false, 'ERP has non-finite score in guide!');
+		}
 		if (newchoice) this.newlp = ad_add(this.newlp, score);
 		return score;
 	},
@@ -61,33 +79,31 @@ Trace.prototype = {
 		if (c === undefined) {
 			// We don't store tapes in the trace, just raw numbers, so that
 			//    re-running with the target program works correctly.
-			var pparams = params.map(function(x) { return primal(x); });
+			var pparams = params.map(function(x) { return ad_primal(x); });
 			var val = erp.sample(pparams);
-			var score = this.erpScore(erp, params, val, true);
-			if (!isFinite(primal(score))) {
-				console.log('name: ' + name);
-				console.log('val: ' + val);
-				console.log('params: ' + pparams);
-				console.log('scorer: ' + erp.score.name);
-				console.log('score: ' +  primal(score));
-				assert(false, 'ERP has non-finite score!');
-			}
+			var score = this.erpScore(name, erp, params, val, true);
 			c = { val: val, erp: erp, params: params, score: score, reachable: true };
 			this.choices[name] = c;
 			this.numChoices++;
 		} else {
-			c.score = this.erpScore(erp, params, c.val, false);
+			c.score = this.erpScore(name, erp, params, c.val, false);
 			c.reachable = true;
 		}
 		return c.val;
 	},
 	factorRaw: function(name, num) {
+		var oldscore = this.score;
 		this.score += num;
-		assert(isFinite(primal(num)), 'Factor has non-finite score!');
+		if (!isFinite(this.score)) {
+			console.log('old score: ' + oldscore);
+			console.log('factor score: ' + num);
+			console.log('new score: ' + this.score);
+			assert(false, 'Factor has non-finite score!');
+		}
 	},
 	factorAD: function(name, num) {
-		this.score = ad_add(this.score, num);
-		assert(isFinite(primal(num)), 'Factor has non-finite score!');
+		// this.score = ad_add(this.score, num);
+		throw 'Guide programs should not have factors!';
 	},
 	run: function(thunk, ad) {
 		this.choices = {};
@@ -157,17 +173,17 @@ Trace.prototype = {
 
 
 // Thunks that we'll feed to 'run' and 'rerun'
-function makeTargetThunk(basename, target, args) {
+function makeTargetThunk(target, args) {
 	return function() {
-		return target(basename, args);
+		return target('', args);
 	};
 }
-function makeGuideThunk(basename, guide, params, args) {
+function makeGuideThunk(guide, params, args) {
 	return function() {
-		return guide(basename, params, args);
+		return guide('', params, args);
 	};
 }
-function makeGuideGradThunk(basename, guide, params, args) {
+function makeGuideGradThunk(guide, params, args) {
 	var objMap = function(obj, f) {
 	  var newobj = {};
 	  for (var prop in obj)
@@ -180,17 +196,27 @@ function makeGuideGradThunk(basename, guide, params, args) {
 		params.values = objMap(params.values, function(p) {
 			return ad_maketape(p);
 		});
-		guide(basename, params, args);
+		params.used = {};
+		guide('', params, args);
 		trace.score.determineFanout();
 		// trace.score.reversePhaseDebug(1.0);
       	trace.score.reversePhase(1.0);
       	// trace.score.print();
-      	var gradient = objMap(params.values, function(p) {
-      		return p.sensitivity;
-      	});
-      	params.values = objMap(params.values, function(p) {
-      		return p.primal;
-      	});;
+      	var gradient = {};
+      	var vals = {};
+      	for (var name in params.values) {
+      		var p = params.values[name];
+      		vals[name] = p.primal;
+      		if (params.used[name]) {
+      			if (p.sensitivity === 0.0) {
+      				console.log('name: ' + name);
+      				console.log('id: ' + p.id);
+      				assert(false, 'Found zero in guide gradient!');
+      			}
+      			gradient[name] = p.sensitivity;
+      		}
+      	}
+      	params.values = vals;
       	return gradient;
 	}
 }
@@ -201,7 +227,7 @@ function makeGuideGradThunk(basename, guide, params, args) {
 // args: inputs to program (i.e. observed evidence)
 // opts: options controlling inference behavior
 // Returns the inferred variational params
-function infer(name, target, guide, args, opts) {
+function infer(target, guide, args, opts) {
 	// Extract options
 	opts = opts || {};
 	function opt(val, defaultval) {
@@ -256,9 +282,9 @@ function infer(name, target, guide, args, opts) {
 
 	var params = makeParams();
 
-	var targetThunk = makeTargetThunk(name, target, args);
-	var guideThunk = makeGuideThunk(name, guide, params, args);
-	var guideGradThunk = makeGuideGradThunk(name, guide, params, args);
+	var targetThunk = makeTargetThunk(target, args);
+	var guideThunk = makeGuideThunk(guide, params, args);
+	var guideGradThunk = makeGuideGradThunk(guide, params, args);
 
 	// Prep step stats, if requested
 	var stepStats = null;
@@ -297,7 +323,7 @@ function infer(name, target, guide, args, opts) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
 			var grad = trace.run(guideGradThunk, true);
-			var guideScore = primal(trace.score);
+			var guideScore = ad_primal(trace.score);
 			trace.rerun(targetThunk);
 			var targetScore = trace.score;
 			var scoreDiff = targetScore - guideScore;
@@ -306,12 +332,6 @@ function infer(name, target, guide, args, opts) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
 					+ ', diff: ' + scoreDiff);
 				console.log('    grad: ' + JSON.stringify(grad));
-			}
-			if (!isFinite(scoreDiff)) {
-				console.log('targetScore: ' + targetScore);
-				console.log('guideScore: ' + guideScore);
-				assert(false,
-					'Detected non-finite score(s)! But this should have been caught by sample or factor...');
 			}
 			for (var name in grad) {
 				var g = grad[name];
@@ -330,8 +350,7 @@ function infer(name, target, guide, args, opts) {
 				sumWeightedGradSq[name] += weightedGradSq;
 			}
 		}
-		// Compute AdaGrad learning rate and control variate,
-		//    then do parameter update
+		// Compute AdaGrad learning rate and control variate
 		var elboGradEst = {};
 		if (componentWiseAStar) {
 			for (var name in sumGrad) {
@@ -348,6 +367,12 @@ function infer(name, target, guide, args, opts) {
 			var aStar = numerSum / denomSum;
 			for (var name in sumGrad) {
 				elboGradEst[name] = (sumWeightedGrad[name] - sumGrad[name]*aStar)/nSamples;
+				if (elboGradEst[name] === 0.0) {
+					console.log('name: ' + name);
+					console.log('sumWeightedGrad: ' + sumWeightedGrad[name]);
+					console.log('sumGrad*aStar: ' + sumGrad[name]*aStar);
+					assert(false, 'zero in elboGradEst! - usually only happens when nSamples = 1.');
+				}
 			}
 		}
 		if (verbosity > 2) {
@@ -411,7 +436,7 @@ function infer(name, target, guide, args, opts) {
 			// Save the trace so we can restore it after the AD gradient run
 			var oldChain = new Trace(); oldChain.copy(chain);
 			var gradient = chain.rerun(guideGradThunk, true);
-			var guideScore = primal(chain.score);
+			var guideScore = ad_primal(chain.score);
 			chain.copy(oldChain);
 			var scoreDiff = targetScore - guideScore;
 			if (verbosity > 4) {
@@ -545,11 +570,20 @@ function param(name, params, initialVal, transform, sampler, hypers) {
 	if (!params.values.hasOwnProperty(name)) {
 		if (initialVal === undefined)
 			initialVal = sampler(hypers);
-		if (transform !== undefined)
+		if (transform !== undefined) {
+			var origVal = initialVal;
 			initialVal = transform.rvs(initialVal);
-		params.values[name] = ad_maketape(primal(initialVal));
+			if (!isFinite(initialVal)) {
+				console.log('name: ' + name);
+				console.log('raw initial val: ' + origVal);
+				console.log('transformed initial val: ' + initialVal);
+				assert(false, 'initial parameter value is non-finite!');
+			}
+		}
+		params.values[name] = ad_maketape(ad_primal(initialVal));
 		params.transforms[name] = transform;
 	}
+	params.used[name] = true;
 	var p = params.values[name];
 	if (transform !== undefined)
 		return transform.fwd(p);
@@ -558,7 +592,9 @@ function param(name, params, initialVal, transform, sampler, hypers) {
 }
 
 module.exports = {
-	infer: infer,
+	variational: {
+		infer: infer
+	},
 	sample: sample,
 	factor: factor,
 	param: param

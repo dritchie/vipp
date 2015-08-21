@@ -208,11 +208,21 @@ var exponentialERP = new ERP(
     }
     );
 
-function betaSample(params) {
+function __betaSample(params) {
   var a = params[0];
   var b = params[1];
   var x = gammaSample([a, 1]);
   return x / (x + gammaSample([b, 1]));
+}
+// I can never reproduce this in simple test code, but in context, this
+//    occasionally samples a value == 1. 
+// Kludge: just rejection sample until we get something in the support.
+function betaSample(params) {
+  var x;
+  do {
+    x = __betaSample(params);
+  } while (x <= 0 || x >= 1)
+  return x;
 }
 
 var betaERP = new ERP(

@@ -362,6 +362,7 @@ module.exports = {
   ad_derivativeR: derivativeR,
   ad_gradientR: gradientR,
   ad_maketape: function(x) { return new S_tape(_e_, x); },
+  ad_primal: function(x) { return x.primal === undefined ? x : x.primal; }
 };
 
 // Also expose functions via the Math module
