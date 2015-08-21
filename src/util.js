@@ -145,6 +145,13 @@ function std(hist) {
   return Math.sqrt(variance);
 }
 
+// Run an address-transformed function with a specified address
+function runWithAddress(fn, addr, args) {
+  args = args === undefined ? [] : args;
+  args.unshift(addr);
+  return fn.apply(null, args);
+}
+
 module.exports = {
   copyObj: copyObj,
   cpsForEach: cpsForEach,
@@ -161,5 +168,6 @@ module.exports = {
   prettyJSON: prettyJSON,
   runningInBrowser: runningInBrowser,
   std: std,
-  sum: sum
+  sum: sum,
+  runWithAddress: runWithAddress
 };

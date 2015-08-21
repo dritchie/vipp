@@ -286,8 +286,14 @@ var result = variational.infer(target, guide, undefined, {
 	convergeEps: 0.1,
 	initLearnrate: 0.5
 });
-var SU = require('procmod/programs/spaceshipUtil');
-SU.genAndSave(guide, result.params, 10, 'test.obj');
+var util = require('src/util');
+var procmodUtils = require('procmod/lib/utils');
+var geos = [];
+for (var i = 0; i < 10; i++) {
+	var geolist = util.runWithAddress(guide, '', [result.params]);
+	geos.push(Geo.mergeGeometries(geolist));
+}
+procmodUtils.saveLineup(geos, 'test.obj');
 
 
 

@@ -135,6 +135,14 @@ Geo.Geometry.prototype = {
 	}
 }
 
+Geo.mergeGeometries = function(geolist) {
+	var accumgeo = new Geo.Geometry();
+	for (var i = 0; i < geolist.length; i++) {
+		accumgeo.merge(geolist[i]);
+	}
+	return accumgeo;
+}
+
 // Voxelization stuff
 
 var vzero = new THREE.Vector3(0, 0, 0);
