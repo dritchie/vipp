@@ -208,10 +208,16 @@ var makeProgram = function(isGuide) {
 
 	// ----------------------------------------------------------------------------
 
-	var _factor = isGuide ? function() {} : factor;
+	// var _factor = isGuide ? function() {} : factor;
+	var factorFunc;
+	if (!isGuide) {
+		factorFunc = function(fn) { factor(fn()); };
+	} else {
+		factorFunc = function(fn) {};
+	}
 
 	var gaussFactor = function(x, mu, sigma) {
-		_factor(gaussianERP.score([mu, sigma], x));
+		return gaussianERP.score([mu, sigma], x);
 	}
 
 	var numIntersections = function(geolist) {
@@ -239,21 +245,25 @@ var makeProgram = function(isGuide) {
 		globalStore.geometry = [];
 		addBody(0, -5, {type: null, xlen: 0, ylen: 0});
 
-		// Encourage desired aspect ratio
-		var bbox = new THREE.Box3();
-		for (var i = 0; i < globalStore.geometry.length; i++)
-			bbox.union(globalStore.geometry[i].getbbox());
-		var size = bbox.size();
-		// var targetWidth = 10;
-		// var targetLength = 10;
-		var targetWidth = 5;
-		var targetLength = 15;
-		gaussFactor(size.x, targetWidth, 0.1);
-		gaussFactor(size.z, targetLength, 0.1);
+		factorFunc(function() {
+			var f = 0;
+			// Encourage desired aspect ratio
+			var bbox = new THREE.Box3();
+			for (var i = 0; i < globalStore.geometry.length; i++)
+				bbox.union(globalStore.geometry[i].getbbox());
+			var size = bbox.size();
+			// var targetWidth = 10;
+			// var targetLength = 10;
+			var targetWidth = 5;
+			var targetLength = 15;
+			f += gaussFactor(size.x, targetWidth, 0.1);
+			f += gaussFactor(size.z, targetLength, 0.1);
 
-		// Discourage self-intersection
-		var nisects = numIntersections(globalStore.geometry);
-		gaussFactor(nisects, 0, 0.1);
+			// Discourage self-intersection
+			var nisects = numIntersections(globalStore.geometry);
+			f += gaussFactor(nisects, 0, 0.1);
+			return f;
+		});
 
 		return globalStore.geometry;
 	}
