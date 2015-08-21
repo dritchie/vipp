@@ -375,7 +375,7 @@ function infer(target, guide, args, opts) {
 				}
 			}
 		}
-		if (verbosity > 2) {
+		if (verbosity > 3) {
 			console.log('  sumGrad: ' +  JSON.stringify(sumGrad));
 			console.log('  sumWeightedGrad: ' +  JSON.stringify(sumWeightedGrad));
 			console.log('  elboGradEst: ' +  JSON.stringify(elboGradEst));
@@ -488,7 +488,7 @@ function infer(target, guide, args, opts) {
 	do {
 		if (verbosity > 1)
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
-		if (verbosity > 2)
+		if (verbosity > 3)
 			console.log('  params: ' + JSON.stringify(params.values));
 		var est = estimateGradient();
 		var gradEst = est.grad;
@@ -499,6 +499,18 @@ function infer(target, guide, args, opts) {
 			stepStats.elbo.push(elboEst);
 			var euboEst = est.eubo === undefined ? estimateEUBO() : est.eubo;
 			stepStats.eubo.push(euboEst);
+		}
+		if (verbosity > 2) {
+			var str = '  ';
+			if (est.elbo !== undefined) {
+				str += 'elbo : ' + est.elbo;
+				if (est.eubo !== undefined)
+					str += ', ';
+			}
+			if (est.eubo !== undefined) {
+				str += 'eubo: ' + est.eubo;
+			}
+			console.log(str);
 		}
 		var maxDelta = 0;
 		for (var name in gradEst) {
@@ -520,8 +532,16 @@ function infer(target, guide, args, opts) {
 			params.values[name] = regularize(p0, p1, weight);
 			// When recording changes, do this in the transformed space
 			var t = params.transforms[name];
-			if (t !== undefined)
-				delta = t.fwd(p1) - t.fwd(p0);
+			if (t !== undefined) {
+				var tp1 = t.fwd(p1);
+				var tp0 = t.fwd(p0);
+				delta = tp1 - tp0;
+				// if (Math.abs(delta) > 1) {
+				// 	console.log('Large param delta:');
+				// 	console.log('p0: ' + p0 + ', t(p0): ' + tp0);
+				// 	console.log('p1: ' + p1 + ', t(p1): ' + tp1);
+				// }
+			}
 			maxDelta = Math.max(Math.abs(delta), maxDelta);
 		}
 		// Check for convergence

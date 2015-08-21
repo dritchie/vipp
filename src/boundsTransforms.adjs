@@ -5,8 +5,8 @@ var nonNegative = {
 };
 
 var unitInterval = {
-	fwd: function(x) { return 1 / (1 + Math.exp(-x)); },
-	rvs: function(x) { return -Math.log(1/x - 1); }
+	fwd: function sigmoid(x) { return 1 / (1 + Math.exp(-x)); },
+	rvs: function logit(x) { return -Math.log(1/x - 1); }
 };
 
 module.exports = {

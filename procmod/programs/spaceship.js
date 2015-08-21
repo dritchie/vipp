@@ -250,8 +250,10 @@ var makeProgram = function(isGuide) {
 		for (var i = 0; i < globalStore.modelState.length; i++)
 			bbox.union(globalStore.modelState[i].getbbox());
 		var size = bbox.size();
-		var targetWidth = 10;
-		var targetLength = 10;
+		// var targetWidth = 10;
+		// var targetLength = 10;
+		var targetWidth = 5;
+		var targetLength = 15;
 		gaussFactor(size.x, targetWidth, 0.1);
 		gaussFactor(size.z, targetLength, 0.1);
 
@@ -277,10 +279,10 @@ var makeProgram = function(isGuide) {
 var target = makeProgram(false);
 var guide = makeProgram(true);
 var result = variational.infer(target, guide, undefined, {
-	verbosity: 2,
+	verbosity: 3,
 	// nSamples: 1,
 	nSamples: 100,
-	nSteps: 100,
+	nSteps: 200,
 	convergeEps: 0.1,
 	initLearnrate: 0.5
 });
