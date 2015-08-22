@@ -34,11 +34,16 @@ var makeProgram = function(isGuide) {
 		return Math.exp(-0.1*depth);
 	};
 
+	// TODO: Use worldup in computing bounds on uprot, so that branches want to grow upwards.
+	// (Need to know whether positive or negative rotations lead to more or less up-ness...)
+	// var worldup = new THREE.Vector3(0, 1, 0);
 	var branch = function(r0, curr, i, d, prev) {
 		// Stop generating if branches get too small
 		if (curr.radius / r0 >= 0.1) {
-			var uprot = _gaussian(0, Math.PI / 12);
-			var leftrot = _gaussian(0, Math.PI / 12);
+			// var uprot = _gaussian(0, Math.PI / 12);
+			// var leftrot = _gaussian(0, Math.PI / 12);
+			var uprot = _uniform(-Math.PI/7, Math.PI/7);
+			var leftrot = _uniform(-Math.PI/7, Math.PI/7);
 			var len = _uniform(3, 5) * curr.radius;
 			var endradius = _uniform(0.7, 0.9) * curr.radius;
 
@@ -127,9 +132,9 @@ var makeProgram = function(isGuide) {
 			f += gaussFactor(size.z, targetLength, 0.1);
 			f += gaussFactor(size.y, targetHeight, 0.1);
 
-			// Discourage self-intersection
-			var nisects = numIntersections(globalStore.geometry);
-			f += gaussFactor(nisects, 0, 0.1);
+			// // Discourage self-intersection
+			// var nisects = numIntersections(globalStore.geometry);
+			// f += gaussFactor(nisects, 0, 0.1);
 
 			return f;
 		});
