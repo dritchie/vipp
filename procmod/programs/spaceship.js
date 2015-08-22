@@ -208,7 +208,6 @@ var makeProgram = function(isGuide) {
 
 	// ----------------------------------------------------------------------------
 
-	// var _factor = isGuide ? function() {} : factor;
 	var factorFunc;
 	if (!isGuide) {
 		factorFunc = function(fn) { factor(fn()); };

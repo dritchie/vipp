@@ -14,15 +14,17 @@ function saveOBJ(geo, filename) {
 
 function saveLineup(geometries, filename) {
 	var padding = 1;
-	var xbase = 0;
+	var xcenter = 0;
 	var xform = new THREE.Matrix4();
 	var totalgeo = new Geo.Geometry();
 	for (var i = 0; i < geometries.length; i++) {
 		var geo = geometries[i];
 		var size = geo.getbbox().size();
-		xform.makeTranslation(xbase + size.x/2, 0, 0);
-		xbase += size.x + padding;
+		var center = geo.getbbox().center();
+		xcenter += size.x/2;
+		xform.makeTranslation(xcenter-center.x, 0, 0);
 		totalgeo.mergeWithTransform(geo, xform);
+		xcenter += size.x/2 + padding;
 	}
 	saveOBJ(totalgeo, filename);
 }
