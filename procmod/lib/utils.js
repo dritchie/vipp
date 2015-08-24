@@ -26,6 +26,9 @@ function saveLineup(geometries, filename) {
 		totalgeo.mergeWithTransform(geo, xform);
 		xcenter += size.x/2 + padding;
 	}
+	var center = totalgeo.center();
+	xform.makeTranslation(-center.x, 0, 0);
+	totalgeo.transform(xform);
 	saveOBJ(totalgeo, filename);
 }
 
