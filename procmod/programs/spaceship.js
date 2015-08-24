@@ -272,15 +272,6 @@ var makeProgram = function(isGuide) {
 };
 
 
-// // Forward sampling test
-// var generate = makeProgram(false);
-// var utils = require('procmod/lib/utils');
-// var geolist = generate();
-// var accumgeo = new Geo.Geometry();
-// for (var i = 0; i < geolist.length; i++)
-// 	accumgeo.merge(geolist[i]);
-// utils.saveOBJ(accumgeo, 'test.obj');
-
 
 // Mean field variational test
 var target = makeProgram(false);
@@ -289,15 +280,18 @@ var result = variational.infer(target, guide, undefined, {
 	verbosity: 3,
 	// nSamples: 1,
 	nSamples: 100,
-	nSteps: 200,
+	nSteps: 100,
 	convergeEps: 0.1,
 	initLearnrate: 0.5
 });
+variational.saveParams(result.params, 'test.params');
+// var result = { params: variational.loadParams('test.params') };
 var util = require('src/util');
 var procmodUtils = require('procmod/lib/utils');
 var geos = [];
 for (var i = 0; i < 10; i++) {
 	var geolist = util.runWithAddress(guide, '', [result.params]);
+	// var geolist = util.runWithAddress(target, '');
 	geos.push(Geo.mergeGeometries(geolist));
 }
 procmodUtils.saveLineup(geos, 'test.obj');

@@ -4,6 +4,7 @@ var numeric = require('numeric');
 var present = require('present');
 var assert = require('assert');
 var _ = require('underscore');
+var fs = require('fs');
 
 
 
@@ -601,8 +602,8 @@ function param(name, params, initialVal, transform, sampler, hypers) {
 			}
 		}
 		params.values[name] = ad_maketape(ad_primal(initialVal));
-		params.transforms[name] = transform;
 	}
+	params.transforms[name] = transform;
 	params.used[name] = true;
 	var p = params.values[name];
 	if (transform !== undefined)
@@ -611,9 +612,21 @@ function param(name, params, initialVal, transform, sampler, hypers) {
 		return p;
 }
 
+// IO for parameters
+function saveParams(params, filename) {
+	fs.writeFileSync(filename, JSON.stringify(params.values));
+};
+function loadParams(filename) {
+	var params = makeParams();
+	params.values = JSON.parse(fs.readFileSync(filename).toString());
+	return params;
+};
+
 module.exports = {
 	variational: {
-		infer: infer
+		infer: infer,
+		saveParams: saveParams,
+		loadParams: loadParams
 	},
 	sample: sample,
 	factor: factor,

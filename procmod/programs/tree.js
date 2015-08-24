@@ -153,16 +153,16 @@ var makeProgram = function(isGuide) {
 			for (var i = 0; i < globalStore.geometry.length; i++)
 				bbox.union(globalStore.geometry[i].getbbox());
 			var size = bbox.size();
-			var targetWidth = 10;
-			var targetLength = 10;
-			var targetHeight = 30;
+			var targetWidth = 15;
+			var targetLength = 15;
+			var targetHeight = 40;
 			f += gaussFactor(size.x, targetWidth, 0.1);
 			f += gaussFactor(size.z, targetLength, 0.1);
 			f += gaussFactor(size.y, targetHeight, 0.1);
 
-			// // Discourage self-intersection
-			// var nisects = numIntersections(globalStore.geometry);
-			// f += gaussFactor(nisects, 0, 0.1);
+			// Discourage self-intersection
+			var nisects = numIntersections(globalStore.geometry);
+			f += gaussFactor(nisects, 0, 0.1);
 
 			return f;
 		});
@@ -180,20 +180,22 @@ var makeProgram = function(isGuide) {
 // Mean field variational test
 var target = makeProgram(false);
 var guide = makeProgram(true);
-// var result = variational.infer(target, guide, undefined, {
-// 	verbosity: 3,
-// 	// nSamples: 1,
-// 	nSamples: 100,
-// 	nSteps: 100,
-// 	convergeEps: 0.1,
-// 	initLearnrate: 0.5
-// });
+var result = variational.infer(target, guide, undefined, {
+	verbosity: 3,
+	// nSamples: 1,
+	nSamples: 100,
+	nSteps: 100,
+	convergeEps: 0.1,
+	initLearnrate: 0.5
+});
+variational.saveParams(result.params, 'test.params');
+// var result = { params: variational.loadParams('test.params') };
 var util = require('src/util');
 var procmodUtils = require('procmod/lib/utils');
 var geos = [];
 for (var i = 0; i < 10; i++) {
-	// var geolist = util.runWithAddress(guide, '', [result.params]);
-	var geolist = util.runWithAddress(target, '');
+	var geolist = util.runWithAddress(guide, '', [result.params]);
+	// var geolist = util.runWithAddress(target, '');
 	geos.push(Geo.mergeGeometries(geolist));
 }
 procmodUtils.saveLineup(geos, 'test.obj');
