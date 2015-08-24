@@ -34,16 +34,38 @@ var makeProgram = function(isGuide) {
 		return Math.exp(-0.1*depth);
 	};
 
-	// TODO: Use worldup in computing bounds on uprot, so that branches want to grow upwards.
-	// (Need to know whether positive or negative rotations lead to more or less up-ness...)
-	// var worldup = new THREE.Vector3(0, 1, 0);
+	var lerp = function(lo, hi, t) { return (1-t)*lo + t*hi; };
+
+	var clamp = function(x, lo, hi) { return Math.min(Math.max(x, lo), hi); };
+
+	var maxrotamt = Math.PI/7;
+	var worldup = new THREE.Vector3(0, 1, 0);
+	var projworldup = new THREE.Vector3();
+	var tmp = new THREE.Vector3();
+	var samplePlaneRot = function(fwd, normal) {
+		projworldup.copy(worldup).projectOnPlane(normal);
+		var dot = projworldup.dot(fwd);
+		tmp.copy(projworldup).cross(fwd);
+		var neg = normal.dot(tmp) > 0;
+		var lobound = neg ? -maxrotamt : lerp(0, -maxrotamt, Math.max(dot, 0));
+		var hibound = neg ? lerp(0, maxrotamt, Math.max(dot, 0)) : maxrotamt;
+		return _uniform(lobound, hibound);
+	}
+
+	var left = new THREE.Vector3();
 	var branch = function(r0, curr, i, d, prev) {
 		// Stop generating if branches get too small
 		if (curr.radius / r0 >= 0.1) {
+			// Sample rotation change for new branch segment
 			// var uprot = _gaussian(0, Math.PI / 12);
 			// var leftrot = _gaussian(0, Math.PI / 12);
-			var uprot = _uniform(-Math.PI/7, Math.PI/7);
-			var leftrot = _uniform(-Math.PI/7, Math.PI/7);
+			// var uprot = _uniform(-Math.PI/7, Math.PI/7);
+			// var leftrot = _uniform(-Math.PI/7, Math.PI/7);
+			var uprot = samplePlaneRot(curr.forward, curr.up);
+			left.copy(curr.up).cross(curr.forward);
+			var leftrot = samplePlaneRot(curr.forward, left);
+
+			// Sample length and radius of new branch segment
 			var len = _uniform(3, 5) * curr.radius;
 			var endradius = _uniform(0.7, 0.9) * curr.radius;
 
@@ -59,14 +81,19 @@ var makeProgram = function(isGuide) {
 				var upnessDistrib = TreeUtils.estimateUpness(split, next);
 				var theta = _gaussian(upnessDistrib[0], upnessDistrib[1]);
 				var branchradius = _uniform(0.9, 1) * endradius;
-				// Branches spawn in middle of parent branch
-				var t = 0.5;
+				// Sample where along the parent segment this branch should occur
+				// var t = 0.5;
+				var tpadding = 0.05;
+				var effectivelen = tmp.copy(next.center).sub(split.center).length();
+				var tlobound = clamp(0.5*branchradius/effectivelen + tpadding, tpadding, 1-tpadding);
+				var thibound = clamp((effectivelen - 0.5*branchradius)/effectivelen, tpadding, 1-tpadding);
+				var t = _uniform(tlobound, thibound);
 				var b = TreeUtils.branchFrame(split, next, t, theta, branchradius);
 				branch(r0, b.frame, 0, d + 1, b.prev);
 			}
 
-			// Keep generating same branch?
-			if (_flip(continueProb(i)))
+			// // Keep generating same branch?
+			// if (_flip(continueProb(i)))
 				branch(r0, next, i + 1, d, null);
 		}
 	};
@@ -152,20 +179,20 @@ var makeProgram = function(isGuide) {
 // Mean field variational test
 var target = makeProgram(false);
 var guide = makeProgram(true);
-var result = variational.infer(target, guide, undefined, {
-	verbosity: 3,
-	// nSamples: 1,
-	nSamples: 100,
-	nSteps: 100,
-	convergeEps: 0.1,
-	initLearnrate: 0.5
-});
+// var result = variational.infer(target, guide, undefined, {
+// 	verbosity: 3,
+// 	// nSamples: 1,
+// 	nSamples: 100,
+// 	nSteps: 100,
+// 	convergeEps: 0.1,
+// 	initLearnrate: 0.5
+// });
 var util = require('src/util');
 var procmodUtils = require('procmod/lib/utils');
 var geos = [];
 for (var i = 0; i < 10; i++) {
-	var geolist = util.runWithAddress(guide, '', [result.params]);
-	// var geolist = util.runWithAddress(target, '');
+	// var geolist = util.runWithAddress(guide, '', [result.params]);
+	var geolist = util.runWithAddress(target, '');
 	geos.push(Geo.mergeGeometries(geolist));
 }
 procmodUtils.saveLineup(geos, 'test.obj');
