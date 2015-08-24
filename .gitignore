@@ -6,3 +6,4 @@ experiments/adTest/*.csv
 experiments/convergence/*.csv
 *.png
 compiledoutput.js
+procmod/results/*
