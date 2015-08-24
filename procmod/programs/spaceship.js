@@ -246,6 +246,7 @@ var makeProgram = function(isGuide) {
 
 		factorFunc(function() {
 			var f = 0;
+
 			// Encourage desired aspect ratio
 			var bbox = new THREE.Box3();
 			for (var i = 0; i < globalStore.geometry.length; i++)
@@ -261,6 +262,7 @@ var makeProgram = function(isGuide) {
 			// Discourage self-intersection
 			var nisects = numIntersections(globalStore.geometry);
 			f += gaussFactor(nisects, 0, 0.1);
+
 			return f;
 		});
 
@@ -271,21 +273,26 @@ var makeProgram = function(isGuide) {
 
 };
 
+// ----------------------------------------------------------------------------
 
+
+var name = 'test';
+// var name = 'spacehip_bbox';
+// var name = 'spacehip_isect';
+// var name = 'spacehip_bbox+isect';
 
 // Mean field variational test
 var target = makeProgram(false);
 var guide = makeProgram(true);
 var result = variational.infer(target, guide, undefined, {
 	verbosity: 3,
-	// nSamples: 1,
 	nSamples: 100,
-	nSteps: 100,
+	nSteps: 200,
 	convergeEps: 0.1,
 	initLearnrate: 0.5
 });
-variational.saveParams(result.params, 'test.params');
-// var result = { params: variational.loadParams('test.params') };
+variational.saveParams(result.params, 'procmod/results/'+name+'.params');
+// var result = { params: variational.loadParams('procmod/results/'+name+'.params') };
 var util = require('src/util');
 var procmodUtils = require('procmod/lib/utils');
 var geos = [];
@@ -294,7 +301,7 @@ for (var i = 0; i < 10; i++) {
 	// var geolist = util.runWithAddress(target, '');
 	geos.push(Geo.mergeGeometries(geolist));
 }
-procmodUtils.saveLineup(geos, 'test.obj');
+procmodUtils.saveLineup(geos, 'procmod/results/'+name+'.obj');
 
 
 
