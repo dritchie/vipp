@@ -35,7 +35,6 @@ var makeProgram = function(isGuide) {
 	};
 
 	var lerp = function(lo, hi, t) { return (1-t)*lo + t*hi; };
-
 	var clamp = function(x, lo, hi) { return Math.min(Math.max(x, lo), hi); };
 
 	var maxrotamt = Math.PI/7;
@@ -76,7 +75,9 @@ var makeProgram = function(isGuide) {
 			globalStore.geometry = globalStore.geometry.concat([geom]);
 
 			// Recursively branch?
-			if (_flip(0.5)) {
+			// var branchprob = 0.5;
+			var branchprob = lerp(0, 0.6, Math.min(1, curr.center.y/5));
+			if (_flip(branchprob)) {
 				// Branches more likely on upward-facing parts of parent branch
 				var upnessDistrib = TreeUtils.estimateUpness(split, next);
 				var theta = _gaussian(upnessDistrib[0], upnessDistrib[1]);
