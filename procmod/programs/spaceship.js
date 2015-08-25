@@ -254,9 +254,13 @@ var makeProgram = function(isGuide) {
 			f += gaussFactor(size.x, targetWidth, 0.1);
 			f += gaussFactor(size.z, targetLength, 0.1);
 
-			// Discourage self-intersection
-			var nisects = numIntersections(globalStore.geometry);
-			f += gaussFactor(nisects, 0, 0.1);
+			// Encourage desired volume
+			var targetVolume = 60;
+			f += gaussFactor(globalStore.volume, targetVolume, 0.1);
+
+			// // Discourage self-intersection
+			// var nisects = numIntersections(globalStore.geometry);
+			// f += gaussFactor(nisects, 0, 0.1);
 
 			return f;
 		});
