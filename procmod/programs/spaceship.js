@@ -13,10 +13,12 @@ var makeProgram = function(isGuide) {
 
 	var globalStore = {};
 
-	// Add geometry to an existing model state
-	var addGeometry = function(geo)
-	{
-		globalStore.geometry = globalStore.geometry.concat([geo]);
+	var addGeometry = function(geo) {
+		globalStore.geometry.push(geo);
+	}
+
+	var addVolume = function(v) {
+		globalStore.volume += v;
 	}
 
 
@@ -47,8 +49,7 @@ var makeProgram = function(isGuide) {
 
 	var wi = function(i, w) { return Math.exp(-w*i); }
 
-	var addBoxBodySeg = function(rearz, prev)
-	{
+	var addBoxBodySeg = function(rearz, prev) {
 		// Must be bigger than the previous segment, if the previous
 		//   segment was not a box (i.e. was a cylinder-type thing)
 		var xl = _uniform(1, 3);
@@ -58,11 +59,11 @@ var makeProgram = function(isGuide) {
 		var zlen = _uniform(2, 5);
 		var geo = Geo.Shapes.Box(0, 0, rearz + 0.5*zlen, xlen, ylen, zlen);
 		addGeometry(geo);
+		addVolume(xlen*ylen*zlen);
 		return { xlen: xlen, ylen: ylen, zlen: zlen, type: BodyType.Box };
 	}
 
-	var addCylinderBodySeg = function(rearz, prev, isnose)
-	{
+	var addCylinderBodySeg = function(rearz, prev, isnose) {
 		// Must be smaller than previous segment, if that was a box
 		var limitrad = 0.5*Math.min(prev.xlen, prev.ylen);
 		var minrad = (prev.type === BodyType.Box) ? 0.4*limitrad : 0.3;
@@ -75,11 +76,11 @@ var makeProgram = function(isGuide) {
 													 radius*_uniform(.25, .75))
 						 : SpaceshipUtil.BodyCylinder(rearz, zlen, radius);
 		addGeometry(geo);
+		addVolume(radius*radius*Math.PI*zlen);
 		return { xlen: xlen, ylen: ylen, zlen: zlen, type: BodyType.Cylinder };
 	}
 
-	var addClusterBodySeg = function(rearz, prev, isnose)
-	{
+	var addClusterBodySeg = function(rearz, prev, isnose) {
 		// Must be smaller than previous segment, if that was a box
 		var limitrad = 0.25*Math.min(prev.xlen, prev.ylen);
 		var minrad = (prev.type === BodyType.Box) ? 0.4*limitrad : 0.5*0.3;
@@ -90,12 +91,12 @@ var makeProgram = function(isGuide) {
 		var zlen = _uniform(2, 5);
 		var geo = SpaceshipUtil.BodyCluster(rearz, zlen, radius);
 		addGeometry(geo);
+		addVolume(radius*radius*Math.PI*zlen*4);
 		return { xlen: xlen, ylen: ylen, zlen: zlen, type: BodyType.Cluster };
 	}
 
 	var BodyType = { Box: 0, Cylinder: 1, Cluster: 2, N: 3 }
-	var addBodySeg = function(rearz, prev)
-	{	
+	var addBodySeg = function(rearz, prev) {	
 		// var type = randomInteger(BodyType.N);
 		var type = _discrete([.33, .33, .33]);
 		if (type == BodyType.Box)
@@ -107,30 +108,29 @@ var makeProgram = function(isGuide) {
 		else throw('unsupported body type ' + type);
 	}
 
-	var addBoxWingSeg = function(xbase, zlo, zhi)
-	{
+	var addBoxWingSeg = function(xbase, zlo, zhi) {
 		var zbase = _uniform(zlo, zhi);
 		var xlen = _uniform(0.25, 2.0);
 		var ylen = _uniform(0.25, 1.25);
 		var zlen = _uniform(0.5, 4.0);
 		var geo = SpaceshipUtil.WingBoxes(xbase, zbase, xlen, ylen, zlen);
 		addGeometry(geo);
+		addVolume(xlen*ylen*zlen*2);
 		if (_flip(0.5))
 			addWingGuns(xbase, zbase, xlen, ylen, zlen);
 		return { xlen: xlen, ylen: ylen, zlen: zlen, zbase: zbase };
 	}
 
-	var addWingGuns = function(xbase, zbase, xlen, ylen, zlen)
-	{
+	var addWingGuns = function(xbase, zbase, xlen, ylen, zlen) {
 		var gunlen = _uniform(1, 1.2)*zlen;
 		var gunxbase = xbase + 0.5*xlen;
 		var gunybase = 0.5*ylen;
 		var geo = SpaceshipUtil.WingGuns(gunxbase, gunybase, zbase, gunlen);
 		addGeometry(geo);
+		// Let's just say that guns don't count for overall volume...
 	};
 
-	var addCylinderWingSeg = function(xbase, zlo, zhi)
-	{
+	var addCylinderWingSeg = function(xbase, zlo, zhi) {
 		var zbase = _uniform(zlo, zhi);
 		var radius = _uniform(.15, .7);
 		var xlen = 2*radius;
@@ -138,12 +138,12 @@ var makeProgram = function(isGuide) {
 		var zlen = _uniform(1, 5);
 		var geo = SpaceshipUtil.WingCylinders(xbase, zbase, zlen, radius);
 		addGeometry(geo);
+		addVolume(radius*radius*Math.PI*zlen*2);
 		return { xlen: xlen, ylen: ylen, zlen: zlen, zbase: zbase };
 	}
 
 	var WingType = { Box: 0, Cylinder: 1, N: 2 }
-	var addWingSeg = function(xbase, zlo, zhi)
-	{
+	var addWingSeg = function(xbase, zlo, zhi) {
 		// var type = randomInteger(WingType.N);
 		var type = _flip(0.5) + 0;
 		if (type == WingType.Box)
@@ -153,8 +153,7 @@ var makeProgram = function(isGuide) {
 		else throw('unsupported wing type ' + type);
 	}
 
-	var addWings = function(i, xbase, zlo, zhi)
-	{
+	var addWings = function(i, xbase, zlo, zhi) {
 		var rets = addWingSeg(xbase, zlo, zhi);
 		var xlen = rets.xlen;
 		var ylen = rets.ylen;	
@@ -164,20 +163,19 @@ var makeProgram = function(isGuide) {
 			addWings(i+1, xbase+xlen, zbase-0.5*zlen, zbase+0.5*zlen);
 	}
 
-	var addFin = function(i, ybase, zlo, zhi, xmax)
-	{
+	var addFin = function(i, ybase, zlo, zhi, xmax) {
 		var xlen = _uniform(0.5, 1.0) * xmax;
 		var ylen = _uniform(0.1, 0.5);
 		var zlen = _uniform(0.5, 1.0) * (zhi - zlo);
 		var zbase = 0.5*(zlo + zhi);
 		var geo = Geo.Shapes.Box(0, ybase + 0.5*ylen, zbase, xlen, ylen, zlen);
 		addGeometry(geo);
+		addVolume(xlen*ylen*zlen);
 		if (_flip(wi(i, 0.2)))
 			addFin(i+1, ybase+ylen, zbase-0.5*zlen, zbase+0.5*zlen, xlen);
 	}
 
-	var addBody = function(i, rearz, prev)
-	{
+	var addBody = function(i, rearz, prev) {
 		// Gen new body segment
 		var rets = addBodySeg(rearz, prev);
 		var xlen = rets.xlen;
@@ -195,11 +193,8 @@ var makeProgram = function(isGuide) {
 		// Continue generating?
 		var nextprev = {type: bodyType, xlen: xlen, ylen: ylen};
 		if (_flip(wi(i, 0.4)))
-		{
 			addBody(i+1, rearz+zlen, nextprev);
-		}
-		else
-		{	
+		else {	
 			// TODO: Also have a box nose, like the old version?
 			if (_flip(0.75))
 				addCylinderBodySeg(rearz+zlen, nextprev, true);
@@ -234,14 +229,14 @@ var makeProgram = function(isGuide) {
 	// ----------------------------------------------------------------------------
 
 	// This is the 'main' function of the program
-	var generate = function(params)
-	{
+	var generate = function(params) {
 		if (isGuide)
 			prm = function(v, t, s, h) { return param(params, v, t, s, h); };
 		else
 			prm = function(x) { return x; };
 
 		globalStore.geometry = [];
+		globalStore.volume = 0;
 		addBody(0, -5, {type: null, xlen: 0, ylen: 0});
 
 		factorFunc(function() {

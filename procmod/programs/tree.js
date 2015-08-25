@@ -72,7 +72,7 @@ var makeProgram = function(isGuide) {
 			var next = TreeUtils.advanceFrame(curr, uprot, leftrot, len, endradius);
 			var split = TreeUtils.findSplitFrame(curr, next);
 			var geom = TreeUtils.treeSegment(prev, curr, split, next);
-			globalStore.geometry = globalStore.geometry.concat([geom]);
+			globalStore.geometry.push(geom);
 
 			// Recursively branch?
 			// var branchprob = 0.5;
