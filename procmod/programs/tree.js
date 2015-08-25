@@ -156,9 +156,9 @@ var makeProgram = function(isGuide) {
 			var targetWidth = 15;
 			var targetLength = 15;
 			var targetHeight = 40;
-			f += gaussFactor(size.x, targetWidth, 0.1);
-			f += gaussFactor(size.z, targetLength, 0.1);
-			f += gaussFactor(size.y, targetHeight, 0.1);
+			f += gaussFactor(size.x, targetWidth, 0.2);
+			f += gaussFactor(size.z, targetLength, 0.2);
+			f += gaussFactor(size.y, targetHeight, 0.2);
 
 			// Discourage self-intersection
 			var nisects = numIntersections(globalStore.geometry);
