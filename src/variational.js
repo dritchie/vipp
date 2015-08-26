@@ -11,7 +11,8 @@ var fs = require('fs');
 // Global inference coroutine
 var coroutine = {
 	sample: function(name, erp, params) {
-		return erp.sample(params);
+		var pparams = params.map(function(x) { return ad_primal(x); });
+		return erp.sample(pparams);
 	},
 	factor: function(name, num) {}
 };
@@ -624,6 +625,7 @@ function loadParams(filename) {
 
 module.exports = {
 	variational: {
+		makeParams: makeParams,
 		infer: infer,
 		saveParams: saveParams,
 		loadParams: loadParams

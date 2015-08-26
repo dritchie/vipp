@@ -30,7 +30,7 @@ S_tape.prototype = {
     var oldsensitivity = this.sensitivity;
     this.sensitivity += sensitivity;
     this.fanout -=1;
-    console.log(spaces(tablevel) + '[' + this.id + '] ' + this.opname + ' | deriv: ' + oldsensitivity + ' + ' + sensitivity + ' = ' + this.sensitivity);
+    console.log(spaces(tablevel) + '[' + this.id + '] ' + this.opname + ' | primal: ' + this.primal + ', deriv: ' + oldsensitivity + ' + ' + sensitivity + ' = ' + this.sensitivity);
   },
   print: function(tablevel) {
     tablevel = tablevel === undefined ? 0 : tablevel;
