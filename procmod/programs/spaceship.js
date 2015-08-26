@@ -2,16 +2,43 @@ var THREE = require('three');
 var Geo = require('procmod/lib/geometry');
 var SpaceshipUtil = require('procmod/programs/spaceshipUtil');
 var bounds = require('src/boundsTransforms');
+var util = require('src/util');
 
 
-var map = function(fn, ar) {
-  return ar.length === 0 ? [] : [fn(ar[0])].concat(map(fn, ar.slice(1)));
+var mapIndexed = function(f, l) {
+  var fn = function(ls, i, _acc) {
+    return ls.length === 0 ?
+        _acc :
+        fn(ls.slice(1), i + 1, _acc.concat([f(i, ls[0])]))
+  };
+  return fn(l, 0, []);
+}
+
+var repeat = function(n, fn) {
+  return n === 0 ? [] : repeat(n - 1, fn).concat([fn(n - 1)]);
 };
 
+// Only works on one argument
+var memoize = function(fn) {
+	var cache = {};
+	return function(x) {
+		var y = cache[x];
+		if (y === undefined) {
+			y = fn(x);
+			cache[x] = y;
+		}
+		return y;
+	};
+}
 
-var makeProgram = function(isGuide) {
+// ----------------------------------------------------------------------------
+
+
+var makeProgram = function(family) {
 
 	var globalStore = {};
+
+	// ----------------------------------------------------------------------------
 
 	var addGeometry = function(geo) {
 		globalStore.geometry.push(geo);
@@ -27,21 +54,76 @@ var makeProgram = function(isGuide) {
 	// Parameter function
 	var prm;
 
-	var _uniform = function(lo, hi) {
-		// var u = uniform(prm(0), prm(1));		// Doesn't work
-		var u = beta(prm(1.0, bounds.nonNegative), prm(1.0, bounds.nonNegative));
+	// ----------------------------------------------------------------------------
+
+	// Neural network stuff
+
+	var weightedSum = function(nums, i) {
+		if (i === undefined) i = 0;
+		return i === nums.length ? 0 : prm(0) * nums[i] + weightedSum(nums, i + 1);
+	}
+
+	// Possible layer transforms
+	var id = function(x) { return x; };
+	var neg_exp = function(x) { return Math.exp(-x); };
+	var sigmoid = function(x) { return 1 / (1 + Math.exp(-x)); };
+	var tanh = function(x) { return Math.tanh(x); };
+
+	var nnLayer = function(inputs, n, transform) {
+		return repeat(n, function() {
+			return transform(weightedSum(inputs));
+		});
+	}
+
+	// Single-layer perceptron
+	var perceptron = function(inputs, nHidden, nOut, outTransform) {
+		// TODO: standardize/rectify input, somehow?
+		var hiddenLayer = nnLayer(inputs, nHidden, tanh);
+		return nnLayer(hiddenLayer, nOut, outTransform);
+	}
+
+	// ----------------------------------------------------------------------------
+
+	// ERP stuff
+
+	// Get ERP parameters, depending on which program family we're using
+	var erpGetParams;
+	if (family === 'target')
+		erpGetParams = function(params) { return params; };
+	else if (family === 'meanField')
+		erpGetParams = function(params, bounds) {
+			return mapIndexed(function(i, p) { return prm(params[i], bounds[i]); }, params);
+		};
+	else if (family === 'neural') {
+		var ERP_NHIDDEN = 1;
+		erpGetParams = function(params, bounds, nninputs, outTransform) {
+			// For now, neural nets share parameters per callsite
+			var address = arguments[0];
+			var callsite = address.slice(address.lastIndexOf('_', address.lastIndexOf('_')));
+			return util.runWithAddress(perceptron, callsite, [nninputs, ERP_NHIDDEN, params.length, outTransform]);
+		}; 
+	}
+
+	var _uniform_params = [1, 1];
+	var _uniform_bounds = [bounds.nonNegative, bounds.nonNegative];
+	var _uniform = function(lo, hi, nninputs) {
+		var params = erpGetParams(_uniform_params, _uniform_bounds, nninputs, neg_exp);
+		var u = beta(params[0], params[1]);
 		return (1.0-u)*lo + u*hi;
 	}
 
-	var _flip = function(p) {
+	var _flip_bounds = [bounds.unitInterval];
+	var _flip = function(p, nninputs) {
 		p = Math.min(Math.max(0.01, p), 0.99);  // Can't be exactly 0 or exactly 1
-		return flip(prm(p, bounds.unitInterval));
+		var params = erpGetParams([p], _flip_bounds, nninputs, sigmoid);
+		return flip(params[0]);
 	}
 
-	var _discrete = function(probs) {
-		return discrete(map(function(x) { return prm(x, bounds.unitInterval); }, probs));
+	var _discrete_bounds = memoize(function(n) { return repeat(n, function(x) { return bounds.unitInterval; }); });
+	var _discrete = function(probs, nninputs) {
+		var params = erpGetParams(probs, _discrete_bounds(probs.length), nninputs, sigmoid);
+		return discrete(params);
 	}
-
 
 	// ----------------------------------------------------------------------------
 
@@ -204,7 +286,7 @@ var makeProgram = function(isGuide) {
 	// ----------------------------------------------------------------------------
 
 	var factorFunc;
-	if (!isGuide) {
+	if (family === 'target') {
 		factorFunc = function(fn) { factor(fn()); };
 	} else {
 		factorFunc = function(fn) {};
@@ -230,10 +312,7 @@ var makeProgram = function(isGuide) {
 
 	// This is the 'main' function of the program
 	var generate = function(params) {
-		if (isGuide)
-			prm = function(v, t, s, h) { return param(params, v, t, s, h); };
-		else
-			prm = function(x) { return x; };
+		prm = function(v, t, s, h) { return param(params, v, t, s, h); };
 
 		globalStore.geometry = [];
 		globalStore.volume = 0;
@@ -281,8 +360,8 @@ var name = 'test';
 // var name = 'spacehip_bbox+isect';
 
 // Mean field variational test
-var target = makeProgram(false);
-var guide = makeProgram(true);
+var target = makeProgram('target');
+var guide = makeProgram('meanField');
 var result = variational.infer(target, guide, undefined, {
 	verbosity: 3,
 	nSamples: 100,
@@ -292,15 +371,13 @@ var result = variational.infer(target, guide, undefined, {
 });
 variational.saveParams(result.params, 'procmod/results/'+name+'.params');
 // var result = { params: variational.loadParams('procmod/results/'+name+'.params') };
-var util = require('src/util');
-var procmodUtils = require('procmod/lib/utils');
 var geos = [];
 for (var i = 0; i < 10; i++) {
 	var geolist = util.runWithAddress(guide, '', [result.params]);
 	// var geolist = util.runWithAddress(target, '');
 	geos.push(Geo.mergeGeometries(geolist));
 }
-procmodUtils.saveLineup(geos, 'procmod/results/'+name+'.obj');
+require('procmod/lib/utils').saveLineup(geos, 'procmod/results/'+name+'.obj');
 
 
 

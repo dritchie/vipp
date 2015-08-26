@@ -3,6 +3,7 @@ var THREE = require('THREE');
 var TreeUtils = require('procmod/programs/treeUtil');
 var bounds = require('src/boundsTransforms');
 var Geo = require('procmod/lib/geometry');
+var util = require('src/util');
 
 var makeProgram = function(isGuide) {
 
@@ -18,7 +19,6 @@ var makeProgram = function(isGuide) {
 	}
 
 	var _uniform = function(lo, hi) {
-		// var u = uniform(prm(0), prm(1));		// Doesn't work
 		var u = beta(prm(1.0, bounds.nonNegative), prm(1.0, bounds.nonNegative));
 		return (1.0-u)*lo + u*hi;
 	}
@@ -194,15 +194,13 @@ var result = variational.infer(target, guide, undefined, {
 });
 variational.saveParams(result.params, 'procmod/results/'+name+'.params');
 // var result = { params: variational.loadParams('procmod/results/'+name+'.params') };
-var util = require('src/util');
-var procmodUtils = require('procmod/lib/utils');
 var geos = [];
 for (var i = 0; i < 10; i++) {
 	var geolist = util.runWithAddress(guide, '', [result.params]);
 	// var geolist = util.runWithAddress(target, '');
 	geos.push(Geo.mergeGeometries(geolist));
 }
-procmodUtils.saveLineup(geos, 'procmod/results/'+name+'.obj');
+require('procmod/lib/utils').saveLineup(geos, 'procmod/results/'+name+'.obj');
 
 
 
