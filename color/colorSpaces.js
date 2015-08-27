@@ -1,4 +1,5 @@
 
+var _ = require('underscore');
 var fs = require('fs');
 
 
@@ -25,7 +26,7 @@ var HSV = {
 		var hue = 60 * huep;
 		if (hue < 0)
 			hue = hue + 360;
-		var saturation = max === 0 ? 0 : else 1 - min/max;
+		var saturation = max === 0 ? 0 : 1 - min/max;
 		var value = max / 255;
 
 		return [hue, saturation, value];
@@ -90,16 +91,29 @@ function PiecewisePolynomial(filename) {
 
 	this.breaks = breaks;
 	this.coefficients = coefficients;
-	this.lines = lines;
+	this.order = order;
 };
-PiecewisePolynomial.protoype.evalAt = function(x) {
-	//
+PiecewisePolynomial.prototype = {
+	constructor: PiecewisePolynomial,
+	evalAt: function(x) {
+		var idx = _.sortedIndex(this.breaks, x);
+		idx--;
+		var delta = x - this.breaks[idx];
+		var result = 0;
+		for (var i = 0; i < this.order; i++)
+			result += this.coefficients[idx][i] * Math.pow(delta, this.order - i);
+		return result;
+	}
 };
 
 
+var hueRemap = new PiecewisePolynomial(__dirname + '/data/hueRemap.txt');
+function deg2rad(x) { return x * Math.PI / 180; }
 var CHSV = {
 	fromRGB: function(c) {
-		//
+		var hsv = HSV.fromRGB(c);
+		var remap = deg2rad(360*hueRemap.evalAt(hsv[0]/360));
+		return [hsv[1]*Math.cos(remap), -hsv[1]*Math.sin(remap), hsv[2]];
 	}
 };
 
@@ -108,7 +122,8 @@ var CHSV = {
 module.exports = {
 	RGB: RGB,
 	HSV: HSV,
-	LAB: LAB
-}
+	LAB: LAB,
+	CHSV: CHSV
+};
 
 
