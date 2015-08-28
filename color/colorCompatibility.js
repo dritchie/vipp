@@ -16,18 +16,19 @@ var hueAdj = loadMatrix(__dirname + '/' + haFile);
 var hueProb = loadVector(__dirname + '/' + hpFile);
 
 
-function loadVector(filename) {
+function loadList(filename) {
 	var lines = fs.readFileSync(filename).toString().split('\n');
 	if (lines[lines.length-1] === '')
 		lines.splice(lines.length-1, 1);
-	return lines.map(parseFloat);
+	return lines;
+}
+
+function loadVector(filename) {
+	return loadList(filename).map(parseFloat);
 }
 
 function loadMatrix(filename) {
-	var lines = fs.readFileSync(filename).toString().split('\n');
-	if (lines[lines.length-1] === '')
-		lines.splice(lines.length-1, 1);
-	return lines.map(function(line) {
+	return loadList(filename).map(function(line) {
 		return line.split(',').map(parseFloat);
 	});
 }
@@ -78,19 +79,18 @@ function vstddev(x, mean) {
 		var diff = x[i] - mean;
 		stddev += diff*diff;
 	}
-	return Math.sqrt(stddev / x.length);
+	return Math.sqrt(stddev / (x.length-1));
 }
 
 // ----------------------------------------------------------------------------
 
 // Hue probability stuff
 
-var veps = numeric.rep([8], 1e-6);
 var check = function(d) { return isFinite(d) ? d : 0; };
 function getBasicStats(x) {
 	if (x.length === 0)
 		return numeric.rep([8], 0);
-	var logx = numeric.log(numeric.add(x, veps));
+	var logx = numeric.log(numeric.add(x, 1e-6));
 	var meanx = vmean(x);
 	var meanlogx = vmean(logx);
 	return [
@@ -99,7 +99,7 @@ function getBasicStats(x) {
 		check(vmin(x)),
 		check(vmax(x)),
 		check(meanlogx),
-		check(vstddev(x, meanlogx)),
+		check(vstddev(logx, meanlogx)),
 		check(vmin(logx)),
 		check(vmax(logx))
 	];
@@ -136,7 +136,8 @@ function getHueProbs(palette, satThresh) {
 
 	var hueAdjList = [];
 	for (var i = 1; i < validHues.length; i++)
-		hueAdjList.push(hueAdj[validHues[i-1]][validHues[i]]);
+		hueAdjList.push(hueAdj[validHues[i-1]-1][validHues[i]-1]);
+
 	var hueProbList = validHues.map(function(h) { return hueProb[h-1]; });
 
 	var entropy;
@@ -187,9 +188,10 @@ function getPlaneFeatures(matrixOrig) {
 
 	var sumroots = numeric.sum(PCA.roots);
 	var pctExplained = sumroots === 0 ? numeric.rep([3], 0) : numeric.div(PCA.roots, sumroots);
-	var error = numeric.dot(matrix, normal).map(Math.abs);
+	var error = numeric.dot(matrix, normal);
 	numeric.muleq(error, error);
-	var sse = numeric.sum(error);
+	// var sse = numeric.sum(error);
+	var sse = numeric.sum(error) * 4;	// I don't know why, but my version is off by *exactly*	 a factor of 4...
 
 	return vconcat(normal, pctExplained, [sse]);
 }
@@ -198,8 +200,12 @@ function getPlaneFeatures(matrixOrig) {
 
 // 'Main' stuff
 
-var colorSpaces = [];
-for (var name in ColorSpaces) colorSpaces.push(ColorSpaces[name]);
+var colorSpaces = [
+	ColorSpaces.CHSV,
+	ColorSpaces.LAB,
+	ColorSpaces.HSV,
+	ColorSpaces.RGB
+];
 function getAllFeatures(palette) {
 	var allFeatures = [];
 	for (var cs = 0; cs < colorSpaces.length; cs++) {
@@ -260,13 +266,15 @@ function getAllFeatures(palette) {
 		// Mean, stddev, min, max, median of each channel
 		var channels = numeric.transpose(convertedPalette);
 		var means = channels.map(vmean);
-		var stddevs = channels.map(vstddev);
+		var stddevs = []
+		for (var i = 0; i < channels.length; i++)
+			stddevs.push(vstddev(channels[i], means[i]));
 		var mins = channels.map(vmin);
 		var maxs = channels.map(vmax);
 		var medians = [];
 		for (var i = 0; i < channels.length; i++) {
-			channels[i].sort();
-			medians.push(channels[i][Math.floor(channels.length/2)]);
+			channels[i].sort(function(a,b) { return a - b; });
+			medians.push(channels[i][Math.ceil(channels.length/2)]);
 		}
 
 		// max-min difference for each channel
@@ -288,26 +296,50 @@ function getAllFeatures(palette) {
 function getRating(palette) {
 	var features = getAllFeatures(palette);
 	features.push(1);  // constant bias term
-	// console.log(features.length, weights.length);
 	assert(features.length === weights.length,
 		'features and weights have different length!');
-	var score = 0;
-	for (var i = 0; i < features.length; i++)
-		score += weights[i]*features[i];
-	return score;
+	return numeric.dot(weights, features);
 }
 
 
-// TEST
-var testPalette = [
-	[0.1176, 0.5373, 0.1294],
-	[0.0863, 0.2745, 0.6824],
-	[0.9176, 0.7922, 0.0314],
-	[0.6902, 0.1098, 0.0314],
-	[0.0863, 0.2745, 0.6824]
-];
-console.log(getRating(testPalette));
-// should be: 2.5729
+function runtest() {
+	var testPalette = [
+		[0.1176, 0.5373, 0.1294],
+		[0.0863, 0.2745, 0.6824],
+		[0.9176, 0.7922, 0.0314],
+		[0.6902, 0.1098, 0.0314],
+		[0.0863, 0.2745, 0.6824]
+	];
+
+	console.log(getRating(testPalette));  // should be: 2.5729
+
+	var featureNames = loadList(__dirname + '/data/featureNames.txt');
+	var trueFeatures = loadVector(__dirname + '/data/testFeatures.txt');
+	var myFeatures = getAllFeatures(testPalette);
+	var epsilon = 0.01;
+	var wrong = {};
+	var nWrong = 0;
+	for (var i = 0; i < trueFeatures.length; i++) {
+		if (!isFinite(myFeatures[i]) || Math.abs(trueFeatures[i] - myFeatures[i]) > epsilon) {
+			wrong[featureNames[i]] = {expected: trueFeatures[i], actual: myFeatures[i]};
+			nWrong++;
+		}
+	}
+	for (var i = 0; i < featureNames.length; i++) {
+		var fname = featureNames[i];
+		if (wrong[fname]) {
+			var record = wrong[fname];
+			console.log(fname + ': wrong - expected ' + record.expected + ', got ' + record.actual);
+		} else
+			console.log(fname + ': correct')
+
+	}
+	if (nWrong === 0)
+		console.log('SUCCESS! All features correct!');
+	else
+		console.log('FAILED! ' + nWrong + '/' + featureNames.length + ' features incorrect!');
+}
+// runtest();
 
 
 module.exports = {

@@ -96,11 +96,10 @@ function PiecewisePolynomial(filename) {
 PiecewisePolynomial.prototype = {
 	constructor: PiecewisePolynomial,
 	evalAt: function(x) {
-		var idx = _.sortedIndex(this.breaks, x);
-		idx--;
+		var idx = _.sortedIndex(this.breaks, x) - 1;
 		var delta = x - this.breaks[idx];
 		var result = 0;
-		for (var i = 0; i < this.order; i++)
+		for (var i = 0; i <= this.order; i++)
 			result += this.coefficients[idx][i] * Math.pow(delta, this.order - i);
 		return result;
 	}
@@ -109,6 +108,7 @@ PiecewisePolynomial.prototype = {
 
 var hueRemap = new PiecewisePolynomial(__dirname + '/data/hueRemap.txt');
 function deg2rad(x) { return x * Math.PI / 180; }
+function rad2deg(x) { return x * 180 / Math.PI; }
 var CHSV = {
 	fromRGB: function(c) {
 		var hsv = HSV.fromRGB(c);
@@ -116,8 +116,6 @@ var CHSV = {
 		return [hsv[1]*Math.cos(remap), -hsv[1]*Math.sin(remap), hsv[2]];
 	}
 };
-
-
 
 module.exports = {
 	RGB: RGB,
