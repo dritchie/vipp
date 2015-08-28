@@ -17,7 +17,8 @@
     "ast-types": "^0.7.2",
     "escodegen": "^1.6.1",
     "esprima": "^2.1.0",
-    "estraverse": "^4.1.0"
+    "estraverse": "^4.1.0",
+    "colorcompatibility": "~0.0.1"
   },
   "bugs": {
     "url": "https://github.com/dritchie/vipp/issues"
