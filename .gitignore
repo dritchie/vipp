@@ -4,6 +4,6 @@ erp_scorers.js
 boundsTransforms.js
 experiments/adTest/*.csv
 experiments/convergence/*.csv
-*.png
 compiledoutput.js
 procmod/results/*
+color/results/*
