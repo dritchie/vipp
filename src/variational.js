@@ -185,7 +185,7 @@ function makeGuideThunk(guide, params, args) {
 		return guide('', params, args);
 	};
 }
-function makeGuideGradThunk(guide, params, args) {
+function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
 	var objMap = function(obj, f) {
 	  var newobj = {};
 	  for (var prop in obj)
@@ -210,7 +210,7 @@ function makeGuideGradThunk(guide, params, args) {
       		var p = params.values[name];
       		vals[name] = p.primal;
       		if (params.used[name]) {
-      			if (p.sensitivity === 0.0) {
+      			if (!allowZeroDerivatives && p.sensitivity === 0.0) {
       				console.log('name: ' + name);
       				console.log('id: ' + p.id);
       				assert(false, 'Found zero in guide gradient!');
@@ -253,6 +253,7 @@ function infer(target, guide, args, opts) {
 	if (gradientOpts.method === 'ELBO+EUBO' || gradientOpts.method === 'ELBO|EUBO') {
 		gradientOpts.mixWeight = opt(gradientOpts.mixWeight, 0.5);
 	}
+	var allowZeroDerivatives = opt(opts.allowZeroDerivatives, false);
 
 	// Define the regularizer for variational parameters
 	if (regularize !== undefined) {
@@ -286,7 +287,7 @@ function infer(target, guide, args, opts) {
 
 	var targetThunk = makeTargetThunk(target, args);
 	var guideThunk = makeGuideThunk(guide, params, args);
-	var guideGradThunk = makeGuideGradThunk(guide, params, args);
+	var guideGradThunk = makeGuideGradThunk(guide, params, args, allowZeroDerivatives);
 
 	// Prep step stats, if requested
 	var stepStats = null;

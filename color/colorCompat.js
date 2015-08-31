@@ -4,6 +4,10 @@ var util = require('src/util');
 var nnutil = require('src/neuralnet/utils');
 var bounds = require('src/boundsTransforms');
 
+var map = function(fn, ar) {
+  return ar.length === 0 ? [] : [fn(ar[0])].concat(map(fn, ar.slice(1)));
+};
+
 var mapIndexed = function(f, l) {
   var fn = function(ls, i, _acc) {
     return ls.length === 0 ?
@@ -40,6 +44,11 @@ var makeProgram = function(family, opts) {
 	var max_norm_regularization = opt(opts.max_norm_regularization, false);
 	var max_norm = opt(opts.max_norm, 4);
 
+	// dropout
+	var dropout_phase = opt(opts.dropout_phase, undefined);
+	var dropout_input_p = opt(opts.dropout_input_p, 0.8);
+	var dropout_hidden_p = opt(opts.dropout_hidden_p, 0.5);
+
 	// ----------------------------------------------------------------------------
 
 	var globalStore = {};
@@ -55,17 +64,18 @@ var makeProgram = function(family, opts) {
 
 	// Dot product of weights / inputs at a NN node
 	var unitNormalParams = [0, 1];
-	var weightedSum;
+	var layerSum;
 	if (max_norm_regularization) {
-		weightedSum = function(nums) {
+		layerSum = function(layerIndex, nums) {
 			// Retrieve the weights
 			var paramNames = [];
 			var norm = 0;
-			var weights = repeat(nums.length, function(x) {
-				var p = prm(undefined, undefined, gaussianERP.sample, unitNormalParams, paramNames);
+			var wmult = (dropout_phase === 'test') ? (layerIndex === 0 ? dropout_input_p : dropout_hidden_p) : 1;
+			var weights = map(function(x) {
+				var p = wmult * prm(undefined, undefined, gaussianERP.sample, unitNormalParams, paramNames);
 				norm += ad_primal(p) * ad_primal(p);
 				return p;
-			});
+			}, nums);
 			// Do max-norm regularization
 			norm = Math.sqrt(norm);
 			if (norm > max_norm) {
@@ -82,11 +92,12 @@ var makeProgram = function(family, opts) {
 			return s;
 		}
 	} else {
-		weightedSum = function(nums) {
+		layerSum = function(layerIndex, nums) {
 			// Retrieve the weights
-			var weights = repeat(nums.length, function(x) {
-				return prm(undefined, undefined, gaussianERP.sample, unitNormalParams);
-			});
+			var wmult = (dropout_phase === 'test') ? (layerIndex === 0 ? dropout_input_p : dropout_hidden_p) : 1;
+			var weights = map(function(x) {
+				return wmult * prm(undefined, undefined, gaussianERP.sample, unitNormalParams);
+			}, nums);
 			// Finally, compute dot product
 			var s = 0;
 			for (var i = 0; i < nums.length; i++)
@@ -102,11 +113,26 @@ var makeProgram = function(family, opts) {
 	var tanh = function(x) { return Math.tanh(x); };
 	var lecun_tanh = function(x) { return 1.7159 * Math.tanh(2/3 * x); };
 
-	var nnLayer = function(inputs, n, transform) {
-		return repeat(n, function() {
-			var b = prm(undefined, undefined, gaussianERP.sample, unitNormalParams)
-			return transform(b + weightedSum(inputs));
-		});
+	// Computing one layer of a neural net
+	var nnLayer;
+	if (dropout_phase === 'train') {
+		nnLayer = function(layerIndex, inputs, n, transform) {
+			// Randomly mask the inputs
+			var p = layerIndex === 0 ? dropout_input_p : dropout_hidden_p;
+			for (var i = 0; i < inputs.length; i++)
+				inputs[i] = (bernoulliERP.sample([p]) + 0) * inputs[i];
+			return repeat(n, function() {
+				var b = prm(undefined, undefined, gaussianERP.sample, unitNormalParams)
+				return transform(b + layerSum(layerIndex, inputs));
+			});
+		}
+	} else {
+		nnLayer = function(layerIndex, inputs, n, transform) {
+			return repeat(n, function() {
+				var b = prm(undefined, undefined, gaussianERP.sample, unitNormalParams)
+				return transform(b + layerSum(layerIndex, inputs));
+			});
+		}
 	}
 
 	// Single-layer perceptron
@@ -116,8 +142,8 @@ var makeProgram = function(family, opts) {
 		// Randomly 'fuzz' the inputs so that they aren't ever zero
 		for (var i = 0; i < inputs.length; i++)
 			inputs[i] = inputs[i] + gaussianERP.sample(FUZZ);
-		var hiddenLayer = nnLayer(inputs, nHidden, lecun_tanh);
-		return nnLayer(hiddenLayer, nOut, outTransform);
+		var hiddenLayer = nnLayer(0, inputs, nHidden, lecun_tanh);
+		return nnLayer(1, hiddenLayer, nOut, outTransform);
 	}
 
 	var nnInput;
@@ -258,12 +284,19 @@ var makeProgram = function(family, opts) {
 
 var name = 'test';
 
-// Mean field variational test
 var target = makeProgram('target');
+
 // var guide = makeProgram('meanField');
 var guide = makeProgram('neural', {
-	erp_n_hidden: 8
+	erp_n_hidden: 8,
+	// dropout_phase: 'train'
 });
+
+var testGuide = guide;
+// var testGuide = makeProgram('neural', {
+// 	erp_n_hidden: 8,
+// 	dropout_phase: 'test'
+// });
 
 var result = variational.infer(target, guide, undefined, {
 	verbosity: 3,
@@ -271,14 +304,15 @@ var result = variational.infer(target, guide, undefined, {
 	nSteps: 200,
 	// nSteps: 400,
 	convergeEps: 0.1,
-	initLearnrate: 1
+	initLearnrate: 1,
+	// allowZeroDerivatives: true
 });
 variational.saveParams(result.params, 'color/results/'+name+'.params');
 // var result = { params: variational.loadParams('color/results/'+name+'.params') };
 for (var i = 0; i < 10; i++) {
-	var palette = util.runWithAddress(guide, '', [result.params]);
+	var palette = util.runWithAddress(testGuide, '', [result.params]);
 	// var palette = util.runWithAddress(target, '');
-	console.log(colorComp.getRating(palette));
+	console.log(i + ': ' + colorComp.getRating(palette));
 	require('color/utils').drawPalette(palette, 'color/results/' + name + '_' + i + '.png');
 }
 
