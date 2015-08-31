@@ -5,6 +5,10 @@ var nnutil = require('src/neuralnet/utils');
 var bounds = require('src/boundsTransforms');
 
 
+var map = function(fn, ar) {
+  return ar.length === 0 ? [] : [fn(ar[0])].concat(map(fn, ar.slice(1)));
+};
+
 var mapIndexed = function(f, l) {
   var fn = function(ls, i, _acc) {
     return ls.length === 0 ?
@@ -25,7 +29,7 @@ var makeProgram = function(family) {
 	// Global parameters we might want to fiddle with
 
 	// How many hidden layer nodes to use for the ERP parameter neural nets
-	var ERP_NHIDDEN = 4;
+	var ERP_NHIDDEN = 8;
 
 	// How many neural net input samples should we collect at each callsite
 	//    to determine how to normalize the input?
@@ -34,8 +38,12 @@ var makeProgram = function(family) {
 
 	// ----------------------------------------------------------------------------
 
+	var globalStore = {};
+
+	// ----------------------------------------------------------------------------
+
 	// Parameter function
-	var prm;
+	var prm = function(v, t, s, h) { return param(globalStore.params, v, t, s, h); };
 
 	// ----------------------------------------------------------------------------
 
@@ -59,12 +67,14 @@ var makeProgram = function(family) {
 
 	var nnLayer = function(inputs, n, transform) {
 		return repeat(n, function() {
-			return transform(weightedSum(inputs));
+			var b = prm(undefined, undefined, gaussianERP.sample, unitNormalParams)
+			return transform(b + weightedSum(inputs));
 		});
 	}
 
 	// Single-layer perceptron
 	var FUZZ = [0, 1e-8];
+	// var FUZZ = [0, 1e-1];
 	var perceptron = function(inputs, nHidden, nOut, outTransform) {
 		// Randomly 'fuzz' the inputs so that they aren't ever zero
 		for (var i = 0; i < inputs.length; i++)
@@ -116,7 +126,7 @@ var makeProgram = function(family) {
 	var _uniform_bounds = [bounds.nonNegative, bounds.nonNegative];
 	var _uniform = function(lo, hi, nninputs) {
 		var params = erpGetParams(_uniform_params, _uniform_bounds, nninputs, neg_exp);
-		var u = beta(params[0], params[1]);
+		var u = beta(params[0] + 0.01, params[1] + 0.01);
 		return (1.0-u)*lo + u*hi;
 	}
 
@@ -136,10 +146,9 @@ var makeProgram = function(family) {
 	// ----------------------------------------------------------------------------
 
 	var generate = function(params) {
-		prm = function(v, t, s, h) { return param(params, v, t, s, h); };
+		globalStore.params = params;
 
 		// TODO: Try sampling in different color spaces?
-
 		var r1 = _uniform(0, 1);
 		var g1 = _uniform(0, 1, nnInput(r1));
 		var b1 = _uniform(0, 1, nnInput(r1, g1));
@@ -220,6 +229,7 @@ var result = variational.infer(target, guide, undefined, {
 	verbosity: 3,
 	nSamples: 100,
 	nSteps: 200,
+	// nSteps: 400,
 	convergeEps: 0.1,
 	initLearnrate: 0.5
 });
