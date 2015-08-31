@@ -4,11 +4,6 @@ var util = require('src/util');
 var nnutil = require('src/neuralnet/utils');
 var bounds = require('src/boundsTransforms');
 
-
-var map = function(fn, ar) {
-  return ar.length === 0 ? [] : [fn(ar[0])].concat(map(fn, ar.slice(1)));
-};
-
 var mapIndexed = function(f, l) {
   var fn = function(ls, i, _acc) {
     return ls.length === 0 ?
@@ -24,17 +19,26 @@ var repeat = function(n, fn) {
 
 // ----------------------------------------------------------------------------
 
-var makeProgram = function(family) {
+var makeProgram = function(family, opts) {
+
+	if (opts === undefined) opts = {};
+	var opt = function(val, defaultval) {
+		return val === undefined ? defaultval : val;
+	}
 
 	// Global parameters we might want to fiddle with
 
 	// How many hidden layer nodes to use for the ERP parameter neural nets
-	var ERP_NHIDDEN = 8;
+	var erp_n_hidden = opt(opts.erp_n_hidden, 8);
 
 	// How many neural net input samples should we collect at each callsite
 	//    to determine how to normalize the input?
-	var NUM_NORMALIZE_SAMPLES = 100;
-	var inputSampleCache = nnutil.makeInputSampleCache(NUM_NORMALIZE_SAMPLES);
+	var num_normalize_samples = opt(opts.num_normalize_samples, 100);
+	var inputSampleCache = nnutil.makeInputSampleCache(num_normalize_samples);
+
+	// max-norm regularization
+	var max_norm_regularization = opt(opts.max_norm_regularization, false);
+	var max_norm = opt(opts.max_norm, 4);
 
 	// ----------------------------------------------------------------------------
 
@@ -49,13 +53,46 @@ var makeProgram = function(family) {
 
 	// Neural network stuff
 
+	// Dot product of weights / inputs at a NN node
 	var unitNormalParams = [0, 1];
-	var weightedSum = function(nums, i) {
-		if (i === undefined) i = 0;
-		// Originally, I was initializing params to zero, but that doesn't work, because
-		//    then all the derivatives are zero.
-		// return i === nums.length ? 0 : prm(0) * nums[i] + weightedSum(nums, i + 1);
-		return i === nums.length ? 0 : prm(undefined, undefined, gaussianERP.sample, unitNormalParams) * nums[i] + weightedSum(nums, i + 1);
+	var weightedSum;
+	if (max_norm_regularization) {
+		weightedSum = function(nums) {
+			// Retrieve the weights
+			var paramNames = [];
+			var norm = 0;
+			var weights = repeat(nums.length, function(x) {
+				var p = prm(undefined, undefined, gaussianERP.sample, unitNormalParams, paramNames);
+				norm += ad_primal(p) * ad_primal(p);
+				return p;
+			});
+			// Do max-norm regularization
+			norm = Math.sqrt(norm);
+			if (norm > max_norm) {
+				var factor = norm / max_norm
+				for (var i = 0; i < weights.length; i++) {
+					weights[i] = weights[i] / factor;
+					globalStore.params[paramNames[i]] = weights[i];
+				}
+			}
+			// Finally, compute dot product
+			var s = 0;
+			for (var i = 0; i < nums.length; i++)
+				s = s + nums[i]*weights[i];
+			return s;
+		}
+	} else {
+		weightedSum = function(nums) {
+			// Retrieve the weights
+			var weights = repeat(nums.length, function(x) {
+				return prm(undefined, undefined, gaussianERP.sample, unitNormalParams);
+			});
+			// Finally, compute dot product
+			var s = 0;
+			for (var i = 0; i < nums.length; i++)
+				s = s + nums[i]*weights[i];
+			return s;
+		}
 	}
 
 	// Possible layer transforms
@@ -209,7 +246,7 @@ var makeProgram = function(family) {
 			var addrParts = address.split('_');
 			var callsite = '_' + addrParts[addrParts.length - 2];
 			nnutil.normalizeInputs(callsite, nninputs, inputSampleCache);
-			return util.runWithAddress(perceptron, callsite, [nninputs, ERP_NHIDDEN, params.length, outTransform]);
+			return util.runWithAddress(perceptron, callsite, [nninputs, erp_n_hidden, params.length, outTransform]);
 		}; 
 	}
 
@@ -224,14 +261,17 @@ var name = 'test';
 // Mean field variational test
 var target = makeProgram('target');
 // var guide = makeProgram('meanField');
-var guide = makeProgram('neural');
+var guide = makeProgram('neural', {
+	erp_n_hidden: 8
+});
+
 var result = variational.infer(target, guide, undefined, {
 	verbosity: 3,
 	nSamples: 100,
 	nSteps: 200,
 	// nSteps: 400,
 	convergeEps: 0.1,
-	initLearnrate: 0.5
+	initLearnrate: 1
 });
 variational.saveParams(result.params, 'color/results/'+name+'.params');
 // var result = { params: variational.loadParams('color/results/'+name+'.params') };

@@ -588,7 +588,10 @@ function factor(name, num) {
 // May have an initial val, a transform, and  a random sampler.
 // Transform specifies how the value should be transformed.
 // The sampler may be used to sample an initial val (if 'initialVal' is undefined).
-function param(name, params, initialVal, transform, sampler, hypers) {
+function param(name, params, initialVal, transform, sampler, hypers, outnames) {
+	// If caller needs to know the address of this param
+	if (outnames !== undefined)
+		outnames.push(name);
 	if (!params.values.hasOwnProperty(name)) {
 		if (initialVal === undefined)
 			initialVal = sampler(hypers);
