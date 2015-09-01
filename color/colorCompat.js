@@ -1,6 +1,7 @@
 
 var _  = require('underscore');
 var colorComp = require('colorcompatibility');
+var colorSpaces = require('colorcompatibility/colorSpaces');
 var util = require('src/util');
 var nnutil = require('src/neuralnet/utils');
 var bounds = require('src/boundsTransforms');
@@ -21,6 +22,35 @@ var mapIndexed = function(f, l) {
 var repeat = function(n, fn) {
   return n === 0 ? [] : repeat(n - 1, fn).concat([fn(n - 1)]);
 };
+
+// ----------------------------------------------------------------------------
+
+// Which color space should we sample in?
+
+var cSpace = colorSpaces.RGB;
+// var cSpace = colorSpaces.HSV;
+// var cSpace = colorSpaces.LAB;
+
+var channelBounds;
+if (cSpace === colorSpaces.RGB) {
+	channelBounds = [
+		{lo: 0, hi: 1},
+		{lo: 0, hi: 1},
+		{lo: 0, hi: 1},
+	];
+} else if (cSpace === colorSpaces.HSV) {
+	channelBounds = [
+		{lo: 0, hi: 360},
+		{lo: 0, hi: 1},
+		{lo: 0, hi: 1},
+	];
+} else if (cSpace === colorSpaces.LAB) {
+	channelBounds = [
+		{lo: 0, hi: 100},
+		{lo: -100, hi: 100},
+		{lo: -100, hi: 100},
+	];
+}
 
 // ----------------------------------------------------------------------------
 
@@ -219,26 +249,25 @@ var makeProgram = function(opts) {
 	var generate = function(params) {
 		globalStore.params = params;
 
-		// TODO: Try sampling in different color spaces?
-		var r1 = _uniform(0, 1);
-		var g1 = _uniform(0, 1, nnInput(r1));
-		var b1 = _uniform(0, 1, nnInput(r1, g1));
+		var r1 = _uniform(channelBounds[0].lo, channelBounds[0].hi);
+		var g1 = _uniform(channelBounds[1].lo, channelBounds[1].hi, nnInput(r1));
+		var b1 = _uniform(channelBounds[2].lo, channelBounds[2].hi, nnInput(r1, g1));
 
-		var r2 = _uniform(0, 1, nnInput(r1, g1, b1));
-		var g2 = _uniform(0, 1, nnInput(r1, g1, b1, r2));
-		var b2 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2));
+		var r2 = _uniform(channelBounds[0].lo, channelBounds[0].hi, nnInput(r1, g1, b1));
+		var g2 = _uniform(channelBounds[1].lo, channelBounds[1].hi, nnInput(r1, g1, b1, r2));
+		var b2 = _uniform(channelBounds[2].lo, channelBounds[2].hi, nnInput(r1, g1, b1, r2, g2));
 
-		var r3 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2));
-		var g3 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2, r3));
-		var b3 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2, r3, g3));
+		var r3 = _uniform(channelBounds[0].lo, channelBounds[0].hi, nnInput(r1, g1, b1, r2, g2, b2));
+		var g3 = _uniform(channelBounds[1].lo, channelBounds[1].hi, nnInput(r1, g1, b1, r2, g2, b2, r3));
+		var b3 = _uniform(channelBounds[2].lo, channelBounds[2].hi, nnInput(r1, g1, b1, r2, g2, b2, r3, g3));
 
-		var r4 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3));
-		var g4 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4));
-		var b4 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4));
+		var r4 = _uniform(channelBounds[0].lo, channelBounds[0].hi, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3));
+		var g4 = _uniform(channelBounds[1].lo, channelBounds[1].hi, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4));
+		var b4 = _uniform(channelBounds[2].lo, channelBounds[2].hi, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4));
 
-		var r5 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4));
-		var g5 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4, r5));
-		var b5 = _uniform(0, 1, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4, r5, g5));
+		var r5 = _uniform(channelBounds[0].lo, channelBounds[0].hi, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4));
+		var g5 = _uniform(channelBounds[1].lo, channelBounds[1].hi, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4, r5));
+		var b5 = _uniform(channelBounds[2].lo, channelBounds[2].hi, nnInput(r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4, r5, g5));
 
 		var palette = [
 			[r1, g1, b1],
@@ -250,7 +279,7 @@ var makeProgram = function(opts) {
 
 		// Factor goes here
 		factorFunc(function() {
-			var score = colorComp.getRating(palette);
+			var score = colorComp.getRating(palette.map(cSpace.toRGB));
 			return gaussFactor(score, 5, 0.1);
 		});
 
@@ -285,7 +314,7 @@ var makeProgram = function(opts) {
 			if (erp_n_hidden.n !== undefined)
 				nHidden = erp_n_hidden.n;
 			else {
-				nHidden = Math.min(Math.max(erp_n_hidden.inputMult * nninputs.length, erp_n_hidden.min), erp_n_hidden.max);
+				nHidden = Math.ceil(Math.min(Math.max(erp_n_hidden.inputMult * nninputs.length, erp_n_hidden.min), erp_n_hidden.max));
 			}
 			return util.runWithAddress(perceptron, callsite, [nninputs, nHidden, params.length, outTransform]);
 		}; 
@@ -293,7 +322,6 @@ var makeProgram = function(opts) {
 
 	return generate;
 };
-
 
 // ----------------------------------------------------------------------------
 
@@ -314,9 +342,10 @@ var target = makeProgram({family: 'target'});
 // var nHidden =  { n: 8 };
 var nHidden = {
 	inputMult: 1,
+	// inputMult: 1.5,
 	min: 1,
 	max: 100
-}
+};
 
 var fuzzAmt = 1e-1;
 var maxNorm = 3;
@@ -383,7 +412,7 @@ var runTest = function(name) {
 	variational.saveParams(result.params, dirname + '/params.txt');
 	for (var i = 0; i < 10; i++) {
 		var palette = util.runWithAddress(testGuide, '', [result.params]);
-		var rating = colorComp.getRating(palette);
+		var rating = colorComp.getRating(palette.map(cSpace.toRGB));
 		require('color/utils').drawPalette(palette, dirname + '/' + rating + '.png');
 	}
 };
