@@ -1,0 +1,23 @@
+// run with: ../webppl/webppl color/colorCompat.wppl --require-js color/utils.js --require-js node_modules/colorcompatibility/colorCompatibility.js
+
+var sampleColor = function() {
+	return [
+		uniform(0, 1),
+		uniform(0, 1),
+		uniform(0, 1)
+	];
+}
+
+var generate = function() {
+	var palette = repeat(5, sampleColor);
+	var score = colorCompatibility.getRating(palette);
+	factor(gaussianERP.score([5, 0.1], score));
+	return palette;
+};
+
+repeat(10, function(i) {
+	var result = HashMH(generate, 1000);
+	var rating = colorCompatibility.getRating(result.MAP);
+	utils.drawPalette(result.MAP, 'color/results/' + rating + '.png');
+	console.log('done ' + i);
+});
