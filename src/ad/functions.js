@@ -36,6 +36,10 @@ S_tape.prototype = {
     tablevel = tablevel === undefined ? 0 : tablevel;
     var s = spaces(tablevel);
     console.log(s + '[' + this.id + '] ' + this.opname + ' | primal: ' + this.primal + ', deriv: ' + this.sensitivity);
+  },
+  resetState: function() {
+    this.sensitivity = 0.0;
+    this.fanout = 0;
   }
 };
 var isTape = function(t) { return t instanceof S_tape; };
@@ -77,6 +81,10 @@ S_tape1.prototype.print = function(tablevel) {
   tablevel = tablevel === undefined ? 0 : tablevel;
   S_tape.prototype.print.call(this, tablevel);
   this.tape.print(tablevel + 1);
+}
+S_tape1.prototype.resetState = function() {
+  S_tape.prototype.resetState.call(this);
+  this.tape.resetState();
 }
 
 var S_tape2 = function(opname, epsilon, primal, factor1, factor2, tape1, tape2) {
@@ -125,6 +133,11 @@ S_tape2.prototype.print = function(tablevel) {
   S_tape.prototype.print.call(this, tablevel);
   this.tape1.print(tablevel + 1);
   this.tape2.print(tablevel + 1);
+}
+S_tape2.prototype.resetState = function() {
+  S_tape.prototype.resetState.call(this);
+  this.tape1.resetState();
+  this.tape2.resetState();
 }
 
 var lift_realreal_to_real = function(f, df_dx1, df_dx2) {

@@ -192,49 +192,52 @@ function makeGuideThunk(guide, params, args) {
 		return guide('', params, args);
 	};
 }
-function makeGuideGradThunk(guide, tracePropName, params, args, allowZeroDerivatives) {
+function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
 	var objMap = function(obj, f) {
 	  var newobj = {};
 	  for (var prop in obj)
 	    newobj[prop] = f(obj[prop]);
 	  return newobj;
 	}
-	// This sort of violates the AD abstraction barrier,
-	//    but I can't think of any other way to do it.
+	var getGrad = function(trace, propName, alsoGetVals) {
+		var traceProp = trace[propName];
+		traceProp.determineFanout();
+		// traceProp.reversePhaseDebug(1.0);
+      	traceProp.reversePhase(1.0);
+      	// traceProp.print();
+      	var ret = { gradient: {} };
+      	if (alsoGetVals) ret.vals = {};
+      	for (var name in params.values) {
+      		var p = params.values[name];
+      		if (alsoGetVals) ret.vals[name] = p.primal;
+      		if (params.used[name]) {
+      			if (!allowZeroDerivatives && p.sensitivity === 0.0) {
+      				console.log('name: ' + name);
+      				console.log('id: ' + p.id);
+      				assert(false, 'Found zero in guide ' + propName + ' gradient!');
+      			}
+      			ret.gradient[name] = p.sensitivity;
+      		}
+      	}
+      	return ret;
+	}
 	return function(trace) {
 		params.values = objMap(params.values, function(p) {
 			return ad_maketape(p);
 		});
 		params.used = {};
 		guide('', params, args);
-		var traceProp = trace[tracePropName];
-		traceProp.determineFanout();
-		// traceProp.reversePhaseDebug(1.0);
-      	traceProp.reversePhase(1.0);
-      	// traceProp.print();
-      	var gradient = {};
-      	var vals = {};
-      	for (var name in params.values) {
-      		var p = params.values[name];
-      		vals[name] = p.primal;
-      		if (params.used[name]) {
-      			if (!allowZeroDerivatives && p.sensitivity === 0.0) {
-      				console.log('name: ' + name);
-      				console.log('id: ' + p.id);
-      				assert(false, 'Found zero in guide gradient!');
-      			}
-      			gradient[name] = p.sensitivity;
-      		}
-      	}
-      	params.values = vals;
-      	return gradient;
+		var scoreRet = getGrad(trace, 'score', true);
+		var grads = {
+			scoreGrad: scoreRet.gradient
+		};
+		if (trace.entropy !== undefined) {
+			trace.score.resetState();
+			grads.entropyGrad = getGrad(trace, 'entropy').gradient;
+		}
+		params.values = scoreRet.vals;
+      	return grads;
 	}
-}
-function makeGuideScoreGradThunk(guide, params, args, allowZeroDerivatives) {
-	return makeGuideGradThunk(guide, 'score', params, args, allowZeroDerivatives);	
-}
-function makeGuideEntropyGradThunk(guide, params, args, allowZeroDerivatives) {
-	return makeGuideGradThunk(guide, 'entropy', params, args, allowZeroDerivatives);	
 }
 
 
@@ -303,8 +306,7 @@ function infer(target, guide, args, opts) {
 
 	var targetThunk = makeTargetThunk(target, args);
 	var guideThunk = makeGuideThunk(guide, params, args);
-	var guideScoreGradThunk = makeGuideScoreGradThunk(guide, params, args, allowZeroDerivatives);
-	var guideEntropyGradThunk = makeGuideEntropyGradThunk(guide, params, args, allowZeroDerivatives);
+	var guideGradThunk = makeGuideGradThunk(guide, params, args, allowZeroDerivatives);
 
 	// Prep step stats, if requested
 	var stepStats = null;
@@ -342,10 +344,9 @@ function infer(target, guide, args, opts) {
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
-			var grad = trace.run(guideScoreGradThunk, true);
+			var grads = trace.run(guideGradThunk, true, doEntropyRegularization);
+			var scoreGrad = grads.scoreGrad; 
 			var guideScore = ad_primal(trace.score);
-			if (doEntropyRegularization)
-				var entropyGrad = trace.rerun(guideEntropyGradThunk, true, true);
 			trace.rerun(targetThunk);
 			var targetScore = trace.score;
 			var scoreDiff = targetScore - guideScore;
@@ -353,10 +354,10 @@ function infer(target, guide, args, opts) {
 			if (verbosity > 4) {
 				console.log('    guide score: ' + guideScore + ', target score: ' + targetScore
 					+ ', diff: ' + scoreDiff);
-				console.log('    grad: ' + JSON.stringify(grad));
+				console.log('    scoreGrad: ' + JSON.stringify(scoreGrad));
 			}
-			for (var name in grad) {
-				var g = grad[name];
+			for (var name in scoreGrad) {
+				var g = scoreGrad[name];
 				if (!sumGrad.hasOwnProperty(name)) {
 					sumGrad[name] = 0.0;
 					sumWeightedGrad[name] = 0.0;
@@ -366,7 +367,7 @@ function infer(target, guide, args, opts) {
 				sumGrad[name] += g;
 				var weightedGrad = g * scoreDiff;
 				if (doEntropyRegularization)
-					weightedGrad += entropyRegularizeWeight * entropyGrad[name];
+					weightedGrad += entropyRegularizeWeight * grads.entropyGrad[name];
 				sumWeightedGrad[name] += weightedGrad;
 				var gSq = g*g;
 				sumGradSq[name] += gSq;
@@ -459,7 +460,7 @@ function infer(target, guide, args, opts) {
 			var targetScore = chain.score;
 			// Save the trace so we can restore it after the AD gradient run
 			var oldChain = new Trace(); oldChain.copy(chain);
-			var gradient = chain.rerun(guideScoreGradThunk, true);
+			var gradient = chain.rerun(guideGradThunk, true).scoreGrad;
 			var guideScore = ad_primal(chain.score);
 			chain.copy(oldChain);
 			var scoreDiff = targetScore - guideScore;
@@ -549,7 +550,12 @@ function infer(target, guide, args, opts) {
 				runningG2[name] = 0.0;
 			runningG2[name] += grad*grad;
 			var weight = learnRate / Math.sqrt(runningG2[name]);
-			assert(isFinite(weight), "Detected non-finite AdaGrad weight!");
+			if (!isFinite(weight)) {
+				console.log('name: ' + name);
+				console.log('grad: ' + grad);
+				console.log('runningG2: ' + runningG2[name]);
+				assert(false, "Detected non-finite AdaGrad weight!");
+			}
 			var delta = weight * grad;
 			var p0 = params.values[name];
 			var p1 = p0 + delta;
