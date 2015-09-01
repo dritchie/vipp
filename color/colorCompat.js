@@ -1,4 +1,5 @@
 
+var _  = require('underscore');
 var colorComp = require('colorcompatibility');
 var util = require('src/util');
 var nnutil = require('src/neuralnet/utils');
@@ -23,17 +24,24 @@ var repeat = function(n, fn) {
 
 // ----------------------------------------------------------------------------
 
-var makeProgram = function(family, opts) {
+var makeProgram = function(opts) {
 
 	if (opts === undefined) opts = {};
 	var opt = function(val, defaultval) {
+		if (val === undefined && opts === undefined)
+			throw 'Option undefined and has no default value!';
 		return val === undefined ? defaultval : val;
 	}
 
 	// Global parameters we might want to fiddle with
 
+	var family = opt(opts.family);
+
 	// How many hidden layer nodes to use for the ERP parameter neural nets
 	var erp_n_hidden = opt(opts.erp_n_hidden, 8);
+
+	// How much to fuzz the inputs of neural nets
+	var nn_input_fuzz = opt(opts.nn_input_fuzz, 1e-8);
 
 	// How many neural net input samples should we collect at each callsite
 	//    to determine how to normalize the input?
@@ -136,12 +144,12 @@ var makeProgram = function(family, opts) {
 	}
 
 	// Single-layer perceptron
-	var FUZZ = [0, 1e-8];
-	// var FUZZ = [0, 1e-1];
+	var FUZZ = [0, nn_input_fuzz];
 	var perceptron = function(inputs, nHidden, nOut, outTransform) {
 		// Randomly 'fuzz' the inputs so that they aren't ever zero
 		for (var i = 0; i < inputs.length; i++)
 			inputs[i] = inputs[i] + gaussianERP.sample(FUZZ);
+		// if (nHidden === 'inputSize') nHidden = Math.max(inputs.length, 4);
 		var hiddenLayer = nnLayer(0, inputs, nHidden, lecun_tanh);
 		return nnLayer(1, hiddenLayer, nOut, outTransform);
 	}
@@ -272,7 +280,14 @@ var makeProgram = function(family, opts) {
 			var addrParts = address.split('_');
 			var callsite = '_' + addrParts[addrParts.length - 2];
 			nnutil.normalizeInputs(callsite, nninputs, inputSampleCache);
-			return util.runWithAddress(perceptron, callsite, [nninputs, erp_n_hidden, params.length, outTransform]);
+			// Decide how many hidden nodes the network should have
+			var nHidden;
+			if (erp_n_hidden.n !== undefined)
+				nHidden = erp_n_hidden.n;
+			else {
+				nHidden = Math.min(Math.max(erp_n_hidden.inputMult * nninputs.length, erp_n_hidden.min), erp_n_hidden.max);
+			}
+			return util.runWithAddress(perceptron, callsite, [nninputs, nHidden, params.length, outTransform]);
 		}; 
 	}
 
@@ -282,39 +297,121 @@ var makeProgram = function(family, opts) {
 
 // ----------------------------------------------------------------------------
 
-var name = 'test';
-
-var target = makeProgram('target');
-
-// var guide = makeProgram('meanField');
-var guide = makeProgram('neural', {
-	erp_n_hidden: 8,
-	// dropout_phase: 'train'
-});
-
-var testGuide = guide;
-// var testGuide = makeProgram('neural', {
-// 	erp_n_hidden: 8,
-// 	dropout_phase: 'test'
-// });
-
-var result = variational.infer(target, guide, undefined, {
+var defaultParams = {
 	verbosity: 3,
 	nSamples: 100,
-	nSteps: 200,
+	// nSteps: 200,
+	nSteps: 400,
 	convergeEps: 0.1,
 	initLearnrate: 1,
+
+	// DON'T LEAVE THIS IN!
 	// allowZeroDerivatives: true
-	entropyRegularizeWeight: 1
-});
-variational.saveParams(result.params, 'color/results/'+name+'.params');
-// var result = { params: variational.loadParams('color/results/'+name+'.params') };
-for (var i = 0; i < 10; i++) {
-	var palette = util.runWithAddress(testGuide, '', [result.params]);
-	// var palette = util.runWithAddress(target, '');
-	console.log(i + ': ' + colorComp.getRating(palette));
-	require('color/utils').drawPalette(palette, 'color/results/' + name + '_' + i + '.png');
+};
+
+var target = makeProgram({family: 'target'});
+
+// var nHidden =  { n: 8 };
+var nHidden = {
+	inputMult: 1,
+	min: 1,
+	max: 100
 }
+
+var fuzzAmt = 1e-1;
+var maxNorm = 3;
+var entRegWeight = 5;
+// var entRegWeight = 10;
+
+
+var params = {};
+
+params['meanField'] = { guideParams: { family: 'meanField' } };
+
+params['neural_baseline'] = { guideParams: {
+	family: 'neural',
+	erp_n_hidden: nHidden
+}};
+
+params['neural_fuzz_' + fuzzAmt] = { guideParams : {
+	family: 'neural',
+	erp_n_hidden: nHidden,
+	nn_input_fuzz: fuzzAmt
+}};
+
+params['neural_maxNorm_' + maxNorm] = { guideParams : {
+	family: 'neural',
+	erp_n_hidden: nHidden,
+	max_norm_regularization: true,
+	max_norm: maxNorm
+}};
+
+params['dropout'] = {
+	guideParams: {
+		family: 'neural',
+		erp_n_hidden: nHidden,
+		dropout_phase: 'train'
+	},
+	testGuideParams: {
+		family: 'neural',
+		erp_n_hidden: nHidden,
+		dropout_phase: 'test'
+	},
+	variationalParams: { allowZeroDerivatives: true }
+};
+
+params['entropyReg_' + entRegWeight] = {
+	guideParams: { family: 'neural', erp_n_hidden: nHidden },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
+
+var fs = require('fs');
+var cp = require('child_process');
+
+var runTest = function(name) {
+	var p = params[name];
+	var guide = makeProgram(p.guideParams);
+	var testGuide = p.testGuideParams === undefined ? guide : makeProgram(p.testGuideParams);
+	var variationalParams = p.variationalParams === undefined ? defaultParams :
+								_.extend(_.clone(defaultParams), p.variationalParams);
+	var result = variational.infer(target, guide, undefined, variationalParams);
+	var dirname = 'color/results/' + name;
+	if (fs.existsSync(dirname))
+		cp.execSync('rm -rf ' + dirname);
+	fs.mkdirSync(dirname);
+	variational.saveParams(result.params, dirname + '/params.txt');
+	for (var i = 0; i < 10; i++) {
+		var palette = util.runWithAddress(testGuide, '', [result.params]);
+		var rating = colorComp.getRating(palette);
+		require('color/utils').drawPalette(palette, dirname + '/' + rating + '.png');
+	}
+};
+
+var runNaiveForward = function() {
+	var dirname = 'color/results/naiveForward';
+	if (fs.existsSync(dirname))
+		cp.execSync('rm -rf ' + dirname);
+	fs.mkdirSync(dirname);
+	for (var i = 0; i < 10; i++) {
+		var palette = util.runWithAddress(target, '', []);
+		var rating = colorComp.getRating(palette);
+		require('color/utils').drawPalette(palette, dirname + '/' + rating + '.png');
+	}
+};
+
+// runTest('meanField');
+// runTest('neural_baseline');
+// runTest('neural_fuzz_' + fuzzAmt);
+// runTest('neural_maxNorm_' + maxNorm);
+// runTest('dropout');
+runTest('entropyReg_' + entRegWeight);
+
+// runNaiveForward();
+
+
+
+
 
 
 
