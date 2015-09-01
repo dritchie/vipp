@@ -41,6 +41,9 @@ Trace.prototype = {
 			};
 		}
 		this.returnVal = otherTrace.returnVal;
+		if (this.entropy !== undefined) {
+			this.entropy = otherTrace.entropy;
+		}
 	},
 	erpScoreRaw: function(name, erp, params, val, newchoice) {
 		var score = erp.score(params, val);
@@ -74,6 +77,8 @@ Trace.prototype = {
 			assert(false, 'ERP has non-finite score in guide!');
 		}
 		if (newchoice) this.newlp = ad_add(this.newlp, score);
+		if (this.entropy !== undefined)
+			this.entropy = ad_add(this.entropy, erp.adentropy(params));
 		return score;
 	},
 	sample: function(name, erp, params) {
@@ -107,13 +112,15 @@ Trace.prototype = {
 		// this.score = ad_add(this.score, num);
 		throw 'Guide programs should not have factors!';
 	},
-	run: function(thunk, ad) {
+	run: function(thunk, ad, entropy) {
 		this.choices = {};
 		this.numChoices = 0;
-		return this.rerun(thunk, ad);
+		return this.rerun(thunk, ad, entropy);
 	},
-	rerun: function(thunk, ad) {
+	rerun: function(thunk, ad, entropy) {
 		this.score = 0.0;
+		if (entropy)
+			this.entropy = 0.0;
 		this.newlp = 0.0;
 		this.erpScore = (ad ? this.erpScoreAD : this.erpScoreRaw);
 		this.factor = (ad ? this.factorAD : this.factorRaw);
@@ -185,7 +192,7 @@ function makeGuideThunk(guide, params, args) {
 		return guide('', params, args);
 	};
 }
-function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
+function makeGuideGradThunk(guide, tracePropName, params, args, allowZeroDerivatives) {
 	var objMap = function(obj, f) {
 	  var newobj = {};
 	  for (var prop in obj)
@@ -200,10 +207,11 @@ function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
 		});
 		params.used = {};
 		guide('', params, args);
-		trace.score.determineFanout();
-		// trace.score.reversePhaseDebug(1.0);
-      	trace.score.reversePhase(1.0);
-      	// trace.score.print();
+		var traceProp = trace[tracePropName];
+		traceProp.determineFanout();
+		// traceProp.reversePhaseDebug(1.0);
+      	traceProp.reversePhase(1.0);
+      	// traceProp.print();
       	var gradient = {};
       	var vals = {};
       	for (var name in params.values) {
@@ -221,6 +229,12 @@ function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
       	params.values = vals;
       	return gradient;
 	}
+}
+function makeGuideScoreGradThunk(guide, params, args, allowZeroDerivatives) {
+	return makeGuideGradThunk(guide, 'score', params, args, allowZeroDerivatives);	
+}
+function makeGuideEntropyGradThunk(guide, params, args, allowZeroDerivatives) {
+	return makeGuideGradThunk(guide, 'entropy', params, args, allowZeroDerivatives);	
 }
 
 
@@ -254,6 +268,8 @@ function infer(target, guide, args, opts) {
 		gradientOpts.mixWeight = opt(gradientOpts.mixWeight, 0.5);
 	}
 	var allowZeroDerivatives = opt(opts.allowZeroDerivatives, false);
+	var entropyRegularizeWeight = opt(opts.entropyRegularizeWeight, 0);
+	var doEntropyRegularization = (entropyRegularizeWeight !== 0);
 
 	// Define the regularizer for variational parameters
 	if (regularize !== undefined) {
@@ -287,7 +303,8 @@ function infer(target, guide, args, opts) {
 
 	var targetThunk = makeTargetThunk(target, args);
 	var guideThunk = makeGuideThunk(guide, params, args);
-	var guideGradThunk = makeGuideGradThunk(guide, params, args, allowZeroDerivatives);
+	var guideScoreGradThunk = makeGuideScoreGradThunk(guide, params, args, allowZeroDerivatives);
+	var guideEntropyGradThunk = makeGuideEntropyGradThunk(guide, params, args, allowZeroDerivatives);
 
 	// Prep step stats, if requested
 	var stepStats = null;
@@ -325,8 +342,10 @@ function infer(target, guide, args, opts) {
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
-			var grad = trace.run(guideGradThunk, true);
+			var grad = trace.run(guideScoreGradThunk, true);
 			var guideScore = ad_primal(trace.score);
+			if (doEntropyRegularization)
+				var entropyGrad = trace.rerun(guideEntropyGradThunk, true, true);
 			trace.rerun(targetThunk);
 			var targetScore = trace.score;
 			var scoreDiff = targetScore - guideScore;
@@ -346,6 +365,8 @@ function infer(target, guide, args, opts) {
 				}
 				sumGrad[name] += g;
 				var weightedGrad = g * scoreDiff;
+				if (doEntropyRegularization)
+					weightedGrad += entropyRegularizeWeight * entropyGrad[name];
 				sumWeightedGrad[name] += weightedGrad;
 				var gSq = g*g;
 				sumGradSq[name] += gSq;
@@ -358,7 +379,7 @@ function infer(target, guide, args, opts) {
 		if (componentWiseAStar) {
 			for (var name in sumGrad) {
 				var aStar = sumWeightedGradSq[name] / sumGradSq[name];
-				elboGradEst[name] = (sumWeightedGrad[name] - sumGrad[name]*aStar)/nSamples;;
+				elboGradEst[name] = (sumWeightedGrad[name] - sumGrad[name]*aStar)/nSamples;
 			}
 		} else {
 			var numerSum = 0.0;
@@ -438,7 +459,7 @@ function infer(target, guide, args, opts) {
 			var targetScore = chain.score;
 			// Save the trace so we can restore it after the AD gradient run
 			var oldChain = new Trace(); oldChain.copy(chain);
-			var gradient = chain.rerun(guideGradThunk, true);
+			var gradient = chain.rerun(guideScoreGradThunk, true);
 			var guideScore = ad_primal(chain.score);
 			chain.copy(oldChain);
 			var scoreDiff = targetScore - guideScore;

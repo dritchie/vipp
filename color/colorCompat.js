@@ -302,10 +302,10 @@ var result = variational.infer(target, guide, undefined, {
 	verbosity: 3,
 	nSamples: 100,
 	nSteps: 200,
-	// nSteps: 400,
 	convergeEps: 0.1,
 	initLearnrate: 1,
 	// allowZeroDerivatives: true
+	entropyRegularizeWeight: 1
 });
 variational.saveParams(result.params, 'color/results/'+name+'.params');
 // var result = { params: variational.loadParams('color/results/'+name+'.params') };

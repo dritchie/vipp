@@ -97,6 +97,39 @@ function betaScore(params, val) {
       -Infinity);
 }
 
+var digammaCof = [
+  -1 / 12, 1 / 120, -1 / 252, 1 / 240,
+  -5 / 660, 691 / 32760, -1 / 12];
+
+function digamma(x) {
+  if (x < 0) {
+    return digamma(1 - x) - Math.PI / Math.tan(Math.PI * x);
+  } else if (x < 6) {
+    var n = Math.ceil(6 - x);
+    var psi = digamma(x + n);
+    for (var i = 0; i < n; i++) {
+      psi = psi - 1 / (x + i);
+    }
+    return psi;
+  } else {
+    var psi = Math.log(x) - 1 / (2 * x);
+    var invsq = 1 / (x * x);
+    var z = 1;
+    for (var i = 0; i < digammaCof.length; i++) {
+      z = z * invsq;
+      psi = psi + digammaCof[i] * z;
+    }
+    return psi;
+  }
+}
+
+function betaEntropy(params) {
+  var a = params[0];
+  var b = params[1];
+  return logBeta(a, b) - (a - 1)*digamma(a) - (b - 1)*digamma(b) +
+    (a + b - 2)*digamma(a + b);
+}
+
 function fact(x) {
   var t = 1;
   while (x > 1) {
@@ -197,6 +230,7 @@ module.exports = {
 	gamma: gammaScore,
 	exponential: exponentialScore,
 	beta: betaScore,
+  betaEntropy: betaEntropy,
 	binomial: binomialScore,
 	poisson: poissonScore,
 	dirichlet: dirichletScore		

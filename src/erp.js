@@ -236,7 +236,8 @@ var betaERP = new ERP(
         var d = digamma(a + b);
         return [Math.log(x) - digamma(a) + d, Math.log(1 - x) - digamma(b) + d];
       },
-      adscore: adscorers.beta
+      adscore: adscorers.beta,
+      adentropy: adscorers.betaEntropy
     }
     );
 
