@@ -67,8 +67,8 @@ var makeProgram = function(opts) {
 
 	var family = opt(opts.family);
 
-	// How many hidden layer nodes to use for the ERP parameter neural nets
-	var erp_n_hidden = opt(opts.erp_n_hidden, 8);
+	// Architecture to use for neural nets
+	var nn_arch = opt(opts.nn_arch, 8);
 
 	// How much to fuzz the inputs of neural nets
 	var nn_input_fuzz = opt(opts.nn_input_fuzz, 1e-8);
@@ -179,9 +179,12 @@ var makeProgram = function(opts) {
 		// Randomly 'fuzz' the inputs so that they aren't ever zero
 		for (var i = 0; i < inputs.length; i++)
 			inputs[i] = inputs[i] + gaussianERP.sample(FUZZ);
-		// if (nHidden === 'inputSize') nHidden = Math.max(inputs.length, 4);
-		var hiddenLayer = nnLayer(0, inputs, nHidden, lecun_tanh);
-		return nnLayer(1, hiddenLayer, nOut, outTransform);
+		var prevLayer = inputs;
+		repeat(nHidden.length, function(i) {
+			var n = nHidden[i];
+			prevLayer = nnLayer(i, prevLayer, n, lecun_tanh);
+		});
+		return nnLayer(nHidden.length, prevLayer, nOut, outTransform);
 	}
 
 	var nnInput;
@@ -309,12 +312,17 @@ var makeProgram = function(opts) {
 			var addrParts = address.split('_');
 			var callsite = '_' + addrParts[addrParts.length - 2];
 			nnutil.normalizeInputs(callsite, nninputs, inputSampleCache);
-			// Decide how many hidden nodes the network should have
-			var nHidden;
-			if (erp_n_hidden.n !== undefined)
-				nHidden = erp_n_hidden.n;
-			else {
-				nHidden = Math.ceil(Math.min(Math.max(erp_n_hidden.inputMult * nninputs.length, erp_n_hidden.min), erp_n_hidden.max));
+			// Decide how many hidden layers, and how many units per layer
+			var nHidden = [];
+			for (var i = 0; i < nn_arch.length; i++) {
+				var layer = nn_arch[i];
+				if (layer.n !== undefined)
+					nHidden.push(layer.n);
+				else {
+					var prevn = i === 0 ? nninputs.length : nHidden[i-1];
+					var n = Math.ceil(Math.min(Math.max(layer.inputMult*prevn, layer.min), layer.max));
+					nHidden.push(n);
+				}
 			}
 			return util.runWithAddress(perceptron, callsite, [nninputs, nHidden, params.length, outTransform]);
 		}; 
@@ -332,80 +340,125 @@ var defaultParams = {
 	nSteps: 400,
 	convergeEps: 0.1,
 	initLearnrate: 1,
-
-	// DON'T LEAVE THIS IN!
-	// allowZeroDerivatives: true
 };
 
 var target = makeProgram({family: 'target'});
 
-// var nHidden =  { n: 8 };
-var nHidden = {
+// Single layer, fixed number of hidden units
+var nnArch_fixed8 = [ { n: 8 } ];
+
+// Single layer, number of hidden units = number of inputs
+var nnArch_relative_oneLayer = [ {
 	inputMult: 1,
-	// inputMult: 1.5,
 	min: 1,
 	max: 100
-};
+} ];
 
+// Two layers, number of hidden units = number of inputs
+var nnArch_relative_twoLayer = [
+	{
+		inputMult: 1,
+		min: 1,
+		max: 100
+	},
+	{
+		inputMult: 1,
+		min: 1,
+		max: 100
+	}
+];
+
+var nnArch = nnArch_relative_oneLayer;
 var fuzzAmt = 1e-1;
 var maxNorm = 3;
 var entRegWeight = 5;
 // var entRegWeight = 10;
 
+// ----------------------------------------------------------------------------
+
+// EARLY EXPERIMENTS
 
 var params = {};
 
+// Mean field
 params['meanField'] = { guideParams: { family: 'meanField' } };
 
+// Neural, no other modifications
 params['neural_baseline'] = { guideParams: {
 	family: 'neural',
-	erp_n_hidden: nHidden
+	nn_arch: nnArch
 }};
 
+// Neural + significant fuzz on NN input layer
 params['neural_fuzz_' + fuzzAmt] = { guideParams : {
 	family: 'neural',
-	erp_n_hidden: nHidden,
+	nn_arch: nnArch,
 	nn_input_fuzz: fuzzAmt
 }};
 
+// Neural + max-norm regularization
 params['neural_maxNorm_' + maxNorm] = { guideParams : {
 	family: 'neural',
-	erp_n_hidden: nHidden,
+	nn_arch: nnArch,
 	max_norm_regularization: true,
 	max_norm: maxNorm
 }};
 
+// Neural + dropout
 params['dropout'] = {
 	guideParams: {
 		family: 'neural',
-		erp_n_hidden: nHidden,
+		nn_arch: nnArch,
 		dropout_phase: 'train'
 	},
 	testGuideParams: {
 		family: 'neural',
-		erp_n_hidden: nHidden,
+		nn_arch: nnArch,
 		dropout_phase: 'test'
 	},
 	variationalParams: { allowZeroDerivatives: true }
 };
 
+// Neural + entropy regularization
 params['entropyReg_' + entRegWeight] = {
-	guideParams: { family: 'neural', erp_n_hidden: nHidden },
+	guideParams: { family: 'neural', nn_arch: nnArch },
 	variationalParams: { entropyRegularizeWeight: entRegWeight }
 };
+
+
+// ----------------------------------------------------------------------------
+
+// EXPERIMENTS W/ ENTROPY REGULARIZATION + DIFFERENT ARCHITECTURES
+
+// One layer
+params['oneLayer'] = {
+	guideParams: { family: 'neural', nn_arch: nnArch_relative_oneLayer },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
+// Two layer
+params['twoLayer'] = {
+	guideParams: { family: 'neural', nn_arch: nnArch_relative_twoLayer },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
+// ----------------------------------------------------------------------------
 
 
 var fs = require('fs');
 var cp = require('child_process');
 
-var runTest = function(name) {
+var runTest = function(name, allowZeroDerivatives, outputName) {
+	if (outputName === undefined) outputName = name;
 	var p = params[name];
 	var guide = makeProgram(p.guideParams);
 	var testGuide = p.testGuideParams === undefined ? guide : makeProgram(p.testGuideParams);
 	var variationalParams = p.variationalParams === undefined ? defaultParams :
 								_.extend(_.clone(defaultParams), p.variationalParams);
+	if (allowZeroDerivatives)
+		variationalParams = _.extend(_.clone(variationalParams), {allowZeroDerivatives: true});
 	var result = variational.infer(target, guide, undefined, variationalParams);
-	var dirname = 'color/results/' + name;
+	var dirname = 'color/results/' + outputName;
 	if (fs.existsSync(dirname))
 		cp.execSync('rm -rf ' + dirname);
 	fs.mkdirSync(dirname);
@@ -429,14 +482,10 @@ var runNaiveForward = function() {
 	}
 };
 
-// runTest('meanField');
-// runTest('neural_baseline');
-// runTest('neural_fuzz_' + fuzzAmt);
-// runTest('neural_maxNorm_' + maxNorm);
-// runTest('dropout');
-runTest('entropyReg_' + entRegWeight);
+// ----------------------------------------------------------------------------
 
-// runNaiveForward();
+// runTest('oneLayer', true);
+runTest('twoLayer', true);
 
 
 
