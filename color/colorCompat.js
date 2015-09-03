@@ -55,6 +55,16 @@ if (cSpace === colorSpaces.RGB) {
 
 // ----------------------------------------------------------------------------
 
+// Possible layer transforms
+var id = function(x) { return x; };
+var neg_exp = function(x) { return Math.exp(-x); };
+var sigmoid = function(x) { return 1 / (1 + Math.exp(-x)); };
+var tanh = function(x) { return Math.tanh(x); };
+var lecun_tanh = function(x) { return 1.7159 * Math.tanh(2/3 * x); };
+var rectified_linear = function(x) { return Math.max(0, x); };
+
+// ----------------------------------------------------------------------------
+
 var makeProgram = function(opts) {
 
 	if (opts === undefined) opts = {};
@@ -73,6 +83,9 @@ var makeProgram = function(opts) {
 
 	// How much to fuzz the inputs of neural nets
 	var nn_input_fuzz = opt(opts.nn_input_fuzz, 1e-8);
+
+	// Which nn layer transform / activation function to use for hidden layers
+	var nn_layer_transform = opt(opts.nn_layer_transform, lecun_tanh);
 
 	// How many neural net input samples should we collect at each callsite
 	//    to determine how to normalize the input?
@@ -144,13 +157,6 @@ var makeProgram = function(opts) {
 			return s;
 		}
 	}
-
-	// Possible layer transforms
-	var id = function(x) { return x; };
-	var neg_exp = function(x) { return Math.exp(-x); };
-	var sigmoid = function(x) { return 1 / (1 + Math.exp(-x)); };
-	var tanh = function(x) { return Math.tanh(x); };
-	var lecun_tanh = function(x) { return 1.7159 * Math.tanh(2/3 * x); };
 
 	// Computing one layer of a neural net
 	var nnLayer;
@@ -360,15 +366,30 @@ var makeProgram = function(opts) {
 var defaultParams = {
 	verbosity: 3,
 	nSamples: 100,
-	nSteps: 400,
+	nSteps: 300,
 	convergeEps: 0.1,
 	initLearnrate: 1,
+
+	// optimizeMethod: 'Adam',
+	// stepSize: 0.005,
+	// adamEps: 1e-8
 };
 
 var target = makeProgram({family: 'target'});
 
 // Single layer, fixed number of hidden units
 var nnArch_fixed8 = [ { n: 8 } ];
+var nnArch_fixed10 = [ { n: 10 } ];
+var nnArch_fixed20 = [ { n: 20 } ];
+
+// Two layers, fixed number of hidden units
+var nnArch_fixed10_fixed5 = [ { n: 10 }, { n: 5 }];
+
+// Three layers, fixed number of hidden units
+var nnArch_fixed12_fixed6_fixed3 = [ { n: 12 }, { n: 6 }, { n: 3 }];
+
+// Four layers!
+var nnArch_fixed3x4 = [{n:3},{n:3},{n:3},{n:3}];
 
 // Single layer, number of hidden units = number of inputs
 var nnArch_relative_oneLayer = [ {
@@ -464,9 +485,47 @@ params['oneLayer'] = {
 	variationalParams: { entropyRegularizeWeight: entRegWeight }
 };
 
+// One layer, rectified linear units
+params['oneLayer_rectLin'] = {
+	guideParams: { family: 'neural', nn_arch: nnArch_relative_oneLayer, nn_layer_transform: rectified_linear },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
+// One layer, twice as many hidden nodes as inputs
+params['oneLayer_inputMult1.5'] = {
+	guideParams: { family: 'neural', nn_arch: [{inputMult: 1.5, min: 1, max: 100}] },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
+// One layer, fixed number of nodes
+params['oneLayer_n10'] = {
+	guideParams: { family: 'neural', nn_arch: nnArch_fixed10 },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+params['oneLayer_n20'] = {
+	guideParams: { family: 'neural', nn_arch: nnArch_fixed20 },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
 // Two layer
 params['twoLayer'] = {
 	guideParams: { family: 'neural', nn_arch: nnArch_relative_twoLayer },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+params['twoLayer_n10n5'] = {
+	guideParams: { family: 'neural', nn_arch: nnArch_fixed10_fixed5 },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
+// Three layer
+params['threeLayer_n12n6n3'] = {
+	guideParams: { family: 'neural', nn_arch: nnArch_fixed12_fixed6_fixed3 },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
+// Four layer
+params['fourLayer_n3x4'] = {
+	guideParams: { family: 'neural', nn_arch: nnArch_fixed3x4 },
 	variationalParams: { entropyRegularizeWeight: entRegWeight }
 };
 
@@ -512,9 +571,15 @@ var runNaiveForward = function() {
 // ----------------------------------------------------------------------------
 
 // runNaiveForward();
-// runTest('meanField', true);
+// runTest('meanField', true, 'derp');
 // runTest('meanField_entReg', true, 'meanField_entReg5_3');
-// runTest('oneLayer', true, 'oneLayer_entReg5');
+// runTest('neural_baseline', true, 'oneLayer_3');
+// runTest('oneLayer', true, 'oneLayer_entReg5_mixtureSameNet_3');
+// runTest('oneLayer_rectLin', true, 'oneLayer_entReg5_rectLin_3');
+// runTest('oneLayer_n10', true, 'oneLayer_entReg5_n10_3');
+// runTest('twoLayer_n10n5', true, 'twoLayer_entReg5_n10n5_3');
+// runTest('threeLayer_n12n6n3', true, 'threeLayer_entReg5_n12n6n3_3');
+runTest('fourLayer_n3x4', true, 'fourLayer_entReg5_n3x4_3');
 
 
 
