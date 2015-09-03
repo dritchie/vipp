@@ -256,7 +256,6 @@ function infer(target, guide, args, opts) {
 	}
 	var nSteps = opt(opts.nSteps, 100);
 	var nSamples = opt(opts.nSamples, 100);
-	var learnRate = opt(opts.initLearnRate, 0.5);
 	var convergeEps = opt(opts.convergeEps, 0.1);
 	var verbosity = opt(opts.verbosity, 0);
 	var recordStepStats = opt(opts.recordStepStats, false);
@@ -275,6 +274,16 @@ function infer(target, guide, args, opts) {
 	var allowZeroDerivatives = opt(opts.allowZeroDerivatives, false);
 	var entropyRegularizeWeight = opt(opts.entropyRegularizeWeight, 0);
 	var doEntropyRegularization = (entropyRegularizeWeight !== 0);
+
+	var optimizeMethod = opt(opts.optimizeMethod, 'AdaGrad');
+	if (optimizeMethod === 'AdaGrad')
+		var learnRate = opt(opts.initLearnRate, 0.5);
+	else if (optimizeMethod === 'Adam') {
+		var stepSize = opt(opts.stepSize, 0.001);
+		var mDecayRate = opt(opts.mDecayRate, 0.9);
+		var vDecayRate = opt(opts.vDecayRate, 0.99);
+		var adamEps = opt(opts.adamEps, 1e-8)
+	} else throw 'Unrecognized optimizeMethod "' + optimizeMethod + '"';
 
 	// Define the regularizer for variational parameters
 	if (regularize !== undefined) {
@@ -511,7 +520,12 @@ function infer(target, guide, args, opts) {
 	// Do variational inference
 	var currStep = 0;
 	var maxDeltaAvg = 0.0;
-	var runningG2 = {};
+	if (optimizeMethod === 'AdaGrad')
+		var runningG2 = {};
+	else if (optimizeMethod === 'Adam') {
+		var runningM = {};
+		var runningV = {};
+	}
 	do {
 		if (verbosity > 1)
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
@@ -548,15 +562,33 @@ function infer(target, guide, args, opts) {
 				assert(false,
 				'Detected a zero in the gradient!');
 			}
-			if (!runningG2.hasOwnProperty(name))
-				runningG2[name] = 0.0;
-			runningG2[name] += grad*grad;
-			var weight = learnRate / Math.sqrt(runningG2[name]);
+			var weight;
+			if (optimizeMethod === 'AdaGrad') {
+				if (!runningG2.hasOwnProperty(name))
+					runningG2[name] = 0.0;
+				runningG2[name] += grad*grad;
+				weight = learnRate / Math.sqrt(runningG2[name]);
+			} else if (optimizeMethod === 'Adam') {
+				if (!runningM.hasOwnProperty(name)) {
+					runningM[name] = 0;
+					runningV[name] = 0;
+				}
+				runningM[name] = mDecayRate*runningM[name] + (1-mDecayRate)*grad;
+				runningV[name] = vDecayRate*runningV[name] + (1-vDecayRate)*(grad*grad);
+				var mt = runningM[name] / (1 - Math.pow(mDecayRate, currStep+1));
+				var vt = runningV[name] / (1 - Math.pow(vDecayRate, currStep+1));
+				weight = stepSize * mt / (Math.sqrt(vt) + adamEps);
+			}
 			if (!isFinite(weight)) {
 				console.log('name: ' + name);
 				console.log('grad: ' + grad);
-				console.log('runningG2: ' + runningG2[name]);
-				assert(false, "Detected non-finite AdaGrad weight!");
+				if (optimizeMethod === 'AdaGrad')
+					console.log('runningG2: ' + runningG2[name]);
+				else if (optimizeMethod === 'Adam') {
+					console.log('runningM: ' + runningM[name]);
+					console.log('runningV ' + runningV[name]);
+				}
+				assert(false, "Detected non-finite param update weight!");
 			}
 			var delta = weight * grad;
 			var p0 = params.values[name];
@@ -568,11 +600,6 @@ function infer(target, guide, args, opts) {
 				var tp1 = t.fwd(p1);
 				var tp0 = t.fwd(p0);
 				delta = tp1 - tp0;
-				// if (Math.abs(delta) > 1) {
-				// 	console.log('Large param delta:');
-				// 	console.log('p0: ' + p0 + ', t(p0): ' + tp0);
-				// 	console.log('p1: ' + p1 + ', t(p1): ' + tp1);
-				// }
 			}
 			maxDelta = Math.max(Math.abs(delta), maxDelta);
 		}
