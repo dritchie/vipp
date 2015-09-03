@@ -360,7 +360,6 @@ var makeProgram = function(opts) {
 var defaultParams = {
 	verbosity: 3,
 	nSamples: 100,
-	// nSteps: 200,
 	nSteps: 400,
 	convergeEps: 0.1,
 	initLearnrate: 1,
@@ -396,7 +395,6 @@ var nnArch = nnArch_relative_oneLayer;
 var fuzzAmt = 1e-1;
 var maxNorm = 3;
 var entRegWeight = 5;
-// var entRegWeight = 10;
 
 // ----------------------------------------------------------------------------
 
@@ -480,7 +478,6 @@ var nSamps = 20;
 var runTest = function(name, allowZeroDerivatives, outputName) {
 	if (outputName === undefined) outputName = name;
 	var p = params[name];
-	assert(p !== undefined, 'Test "' + name + '" does not exist');
 	var guide = makeProgram(p.guideParams);
 	var testGuide = p.testGuideParams === undefined ? guide : makeProgram(p.testGuideParams);
 	var variationalParams = p.variationalParams === undefined ? defaultParams :
@@ -491,11 +488,17 @@ var runTest = function(name, allowZeroDerivatives, outputName) {
 	var palettes = repeat(nSamps, function() {
 		return util.runWithAddress(testGuide, '', [result.params]);
 	});
-	require('color/utils').saveStatsAndSamples(outputName, palettes, {
+	var otherOpts = {
 		finalELBO: result.elbo,
 		stepsTaken: result.stepsTaken,
-		timeTaken: result.timeTaken
-	});
+		timeTaken: result.timeTaken,
+		variationalParams: variationalParams,
+		guideParams: p.guideParams
+	};
+	if (p.testGuideParams !== undefined) {
+		otherOpts.testGuideParams = p.testGuideParams;
+	}
+	require('color/utils').saveStatsAndSamples(outputName, palettes, otherOpts);
 	variational.saveParams(result.params, 'color/results/' + outputName + '/params.txt');
 };
 
@@ -510,8 +513,8 @@ var runNaiveForward = function() {
 
 // runNaiveForward();
 // runTest('meanField', true);
-// runTest('meanField_entReg', true);
-runTest('oneLayer', true);
+// runTest('meanField_entReg', true, 'meanField_entReg5_3');
+// runTest('oneLayer', true, 'oneLayer_entReg5');
 
 
 
