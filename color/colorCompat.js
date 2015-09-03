@@ -1,10 +1,11 @@
 
 var _  = require('underscore');
-var colorComp = require('colorcompatibility');
-var colorSpaces = require('colorcompatibility/colorSpaces');
 var util = require('src/util');
 var nnutil = require('src/neuralnet/utils');
 var bounds = require('src/boundsTransforms');
+var assert = require('assert');
+var colorComp = require('colorcompatibility');
+var colorSpaces = require('colorcompatibility/colorSpaces');
 
 var map = function(fn, ar) {
   return ar.length === 0 ? [] : [fn(ar[0])].concat(map(fn, ar.slice(1)));
@@ -166,9 +167,10 @@ var makeProgram = function(opts) {
 		}
 	} else {
 		nnLayer = function(layerIndex, inputs, n, transform) {
-			return repeat(n, function() {
+			return repeat(n, function(i) {
 				var b = prm(undefined, undefined, gaussianERP.sample, unitNormalParams)
-				return transform(b + layerSum(layerIndex, inputs));
+				var xform = _.isFunction(transform) ? transform : transform[i];
+				return xform(b + layerSum(layerIndex, inputs));
 			});
 		}
 	}
@@ -228,9 +230,29 @@ var makeProgram = function(opts) {
 
 	var _uniform_params = [1, 1];
 	var _uniform_bounds = [bounds.nonNegative, bounds.nonNegative];
+	// Using 0.5 gives zero entropy derivative, so we randomize
+	// (may eventually need to 'fuzz' all ERP param initial values for this very reason...)
+	var _mixChoice_params = [gaussianERP.sample([0.5, 0.05])];
+	var _mixChoice_bounds = [bounds.unitInterval];
 	var _uniform = function(lo, hi, nninputs) {
+
 		var params = erpGetParams(_uniform_params, _uniform_bounds, nninputs, neg_exp);
 		var u = beta(params[0] + 0.01, params[1] + 0.01);
+
+		// // Mixture of two betas
+		// var flipParams = erpGetParams(_mixChoice_params, _mixChoice_bounds, nninputs, sigmoid, '[which]');
+		// var which = flip(flipParams[0]) + 0;
+		// var betaParams = erpGetParams(_uniform_params, _uniform_bounds, nninputs, neg_exp, '[' + which + ']');
+		// var u = beta(betaParams[0] + 0.01, betaParams[1] + 0.01);
+
+		// // Different way of doing a mixture of two betas
+		// var params = erpGetParams(_mixChoice_params.concat(_uniform_params).concat(_uniform_params),
+		// 	_mixChoice_bounds.concat(_uniform_bounds).concat(_uniform_bounds),
+		// 	nninputs,
+		// 	[sigmoid, neg_exp, neg_exp, neg_exp, neg_exp]);
+		// var which = flip(params[0]) + 0;
+		// var u = beta(params[2*which + 1] + 0.01, params[2*which + 2] + 0.01);
+
 		return (1.0-u)*lo + u*hi;
 	}
 
@@ -299,7 +321,7 @@ var makeProgram = function(opts) {
 		} while (!inputSampleCache.hasEnoughSamples())
 
 		// Now we can swap out the params function with the one that actually uses neural nets
-		erpGetParams = function(params, bounds, nninputs, outTransform) {
+		erpGetParams = function(params, bounds, nninputs, outTransform, tag) {
 			// For now, neural nets share parameters per callsite
 			var address = arguments[0];
 			if (nninputs === undefined) {
@@ -311,7 +333,9 @@ var makeProgram = function(opts) {
 			}
 			var addrParts = address.split('_');
 			var callsite = '_' + addrParts[addrParts.length - 2];
-			nnutil.normalizeInputs(callsite, nninputs, inputSampleCache);
+			nninputs = nnutil.normalizeInputs(callsite, nninputs, inputSampleCache);
+			if (tag !== undefined)
+				callsite = callsite + tag;
 			// Decide how many hidden layers, and how many units per layer
 			var nHidden = [];
 			for (var i = 0; i < nn_arch.length; i++) {
@@ -430,6 +454,12 @@ params['entropyReg_' + entRegWeight] = {
 
 // EXPERIMENTS W/ ENTROPY REGULARIZATION + DIFFERENT ARCHITECTURES
 
+// Mean field
+params['meanField_entReg'] = {
+	guideParams: { family: 'meanField' },
+	variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
 // One layer
 params['oneLayer'] = {
 	guideParams: { family: 'neural', nn_arch: nnArch_relative_oneLayer },
@@ -445,12 +475,12 @@ params['twoLayer'] = {
 // ----------------------------------------------------------------------------
 
 
-var fs = require('fs');
-var cp = require('child_process');
+var nSamps = 20;
 
 var runTest = function(name, allowZeroDerivatives, outputName) {
 	if (outputName === undefined) outputName = name;
 	var p = params[name];
+	assert(p !== undefined, 'Test "' + name + '" does not exist');
 	var guide = makeProgram(p.guideParams);
 	var testGuide = p.testGuideParams === undefined ? guide : makeProgram(p.testGuideParams);
 	var variationalParams = p.variationalParams === undefined ? defaultParams :
@@ -458,34 +488,30 @@ var runTest = function(name, allowZeroDerivatives, outputName) {
 	if (allowZeroDerivatives)
 		variationalParams = _.extend(_.clone(variationalParams), {allowZeroDerivatives: true});
 	var result = variational.infer(target, guide, undefined, variationalParams);
-	var dirname = 'color/results/' + outputName;
-	if (fs.existsSync(dirname))
-		cp.execSync('rm -rf ' + dirname);
-	fs.mkdirSync(dirname);
-	variational.saveParams(result.params, dirname + '/params.txt');
-	for (var i = 0; i < 10; i++) {
-		var palette = util.runWithAddress(testGuide, '', [result.params]);
-		var rating = colorComp.getRating(palette.map(cSpace.toRGB));
-		require('color/utils').drawPalette(palette, dirname + '/' + rating + '.png');
-	}
+	var palettes = repeat(nSamps, function() {
+		return util.runWithAddress(testGuide, '', [result.params]);
+	});
+	require('color/utils').saveStatsAndSamples(outputName, palettes, {
+		finalELBO: result.elbo,
+		stepsTaken: result.stepsTaken,
+		timeTaken: result.timeTaken
+	});
+	variational.saveParams(result.params, 'color/results/' + outputName + '/params.txt');
 };
 
 var runNaiveForward = function() {
-	var dirname = 'color/results/naiveForward';
-	if (fs.existsSync(dirname))
-		cp.execSync('rm -rf ' + dirname);
-	fs.mkdirSync(dirname);
-	for (var i = 0; i < 10; i++) {
-		var palette = util.runWithAddress(target, '', []);
-		var rating = colorComp.getRating(palette);
-		require('color/utils').drawPalette(palette, dirname + '/' + rating + '.png');
-	}
+	var palettes = repeat(nSamps, function() {
+		return util.runWithAddress(target, '');
+	});
+	require('color/utils').saveStatsAndSamples('naiveForward', palettes);
 };
 
 // ----------------------------------------------------------------------------
 
-// runTest('oneLayer', true);
-runTest('twoLayer', true);
+// runNaiveForward();
+// runTest('meanField', true);
+// runTest('meanField_entReg', true);
+runTest('oneLayer', true);
 
 
 

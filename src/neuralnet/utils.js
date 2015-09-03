@@ -47,9 +47,10 @@ function collectSample(callsite, inputs, inputCache) {
 function normalizeInputs(callsite, inputs, inputCache) {
 	var cacheEntry = inputCache[callsite];
 	assert(cacheEntry !== undefined, 'Attempting to normalize NN inputs for which no sample stats exist!');
-	for (var i = 0; i < inputs.length; i++) {
-		inputs[i] = 2 * (inputs[i] - cacheEntry.mins[i]) / (cacheEntry.maxs[i] - cacheEntry.mins[i]) - 1;
-	}
+	var newinputs = inputs.slice();
+	for (var i = 0; i < inputs.length; i++)
+		newinputs[i] = 2 * (inputs[i] - cacheEntry.mins[i]) / (cacheEntry.maxs[i] - cacheEntry.mins[i]) - 1;
+	return newinputs;
 }
 
 

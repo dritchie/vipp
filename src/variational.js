@@ -212,6 +212,8 @@ function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
       		if (alsoGetVals) ret.vals[name] = p.primal;
       		if (params.used[name]) {
       			if (!allowZeroDerivatives && p.sensitivity === 0.0) {
+      				// traceProp.print();
+      				// console.log('-------------------------------------------------');
       				console.log('name: ' + name);
       				console.log('id: ' + p.id);
       				assert(false, 'Found zero in guide ' + propName + ' gradient!');
@@ -392,7 +394,7 @@ function infer(target, guide, args, opts) {
 			var aStar = numerSum / denomSum;
 			for (var name in sumGrad) {
 				elboGradEst[name] = (sumWeightedGrad[name] - sumGrad[name]*aStar)/nSamples;
-				if (elboGradEst[name] === 0.0) {
+				if (!allowZeroDerivatives && elboGradEst[name] === 0.0) {
 					console.log('name: ' + name);
 					console.log('sumWeightedGrad: ' + sumWeightedGrad[name]);
 					console.log('sumGrad*aStar: ' + sumGrad[name]*aStar);
@@ -540,7 +542,7 @@ function infer(target, guide, args, opts) {
 		var maxDelta = 0;
 		for (var name in gradEst) {
 			var grad = gradEst[name];
-			if (grad === 0.0) {
+			if (!allowZeroDerivatives && grad === 0.0) {
 				console.log('name: ' + name);
 				console.log('grad: ' + grad);
 				assert(false,

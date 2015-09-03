@@ -14,6 +14,12 @@ function flipScore(params, val) {
   return val ? Math.log(weight) : Math.log(1 - weight);
 }
 
+function flipEntropy(params) {
+  var p = params[0];
+  var q = 1 - p;
+  return -q*Math.log(q) - p*Math.log(p);
+}
+
 function randomIntegerScore(params, val) {
   var stop = params[0];
   var inSupport = (val == Math.floor(val)) && (0 <= val) && (val < stop);
@@ -224,6 +230,7 @@ function dirichletScore(params, val) {
 module.exports = {
 	uniform: uniformScore,
 	flip: flipScore,
+  flipEntropy: flipEntropy,
 	randomInteger: randomIntegerScore,
 	gaussian: gaussianScore,
 	discrete: discreteScore,

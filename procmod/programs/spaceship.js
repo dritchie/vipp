@@ -426,7 +426,7 @@ var makeProgram = function(family) {
 			}
 			var addrParts = address.split('_');
 			var callsite = '_' + addrParts[addrParts.length - 2];
-			nnutil.normalizeInputs(callsite, nninputs, inputSampleCache);
+			nninputs = nnutil.normalizeInputs(callsite, nninputs, inputSampleCache);
 			return util.runWithAddress(perceptron, callsite, [nninputs, ERP_NHIDDEN, params.length, outTransform]);
 		}; 
 	}

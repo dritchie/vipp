@@ -67,7 +67,8 @@ var bernoulliERP = new ERP(
                'bernoulliERP param outside of domain.');
         return val ? [1 / weight] : [-1 / (1 - weight)];
       },
-      adscore: adscorers.flip
+      adscore: adscorers.flip,
+      adentropy: adscorers.flipEntropy
     }
     );
 
