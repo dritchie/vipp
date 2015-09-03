@@ -33,22 +33,38 @@ function computeDiversity(palettes) {
 	var labpalettes = palettes.map(function(p) {
 		return _.flatten(p.map(colorSpaces.LAB.fromRGB));
 	});
+
 	var mean = numeric.rep([15], 0);
 	for (var i = 0; i < labpalettes.length; i++)
 		numeric.addeq(mean, labpalettes[i]);
 	numeric.diveq(mean, labpalettes.length);
-	var stddev = numeric.rep([15], 0);
-	for (var i = 0; i < labpalettes.length; i++) {
-		var diff = numeric.sub(labpalettes[i], mean);
-		numeric.muleq(diff, diff);
-		numeric.addeq(stddev, diff);
+
+	// Norm of covariance matrix
+	var covar = numeric.rep([15, 15], 0);
+	for (j = 0; j < 15; j++) {
+		for (k = 0; k < 15; k++) {
+			for (var i = 0; i < labpalettes.length; i++) {
+				covar[j][k] += (labpalettes[i][j] - mean[j])*(labpalettes[i][k] - mean[k]);
+			}
+			covar[j][k] /= (labpalettes.length - 1);
+		}
 	}
-	numeric.diveq(stddev, labpalettes.length);
-	numeric.sqrteq(stddev);
-	return numeric.sum(stddev);
+	var cvflat = _.flatten(covar);
+	// return Math.sqrt(numeric.sum(numeric.mul(cvflat, cvflat)));
+	return Math.sqrt(numeric.sum(numeric.mul(cvflat, cvflat)) / cvflat.length);
+
+	// // Sum of stddevs
+	// var stddev = numeric.rep([15], 0);
+	// for (var i = 0; i < labpalettes.length; i++) {
+	// 	var diff = numeric.sub(labpalettes[i], mean);
+	// 	numeric.muleq(diff, diff);
+	// 	numeric.addeq(stddev, diff);
+	// }
+	// numeric.diveq(stddev, labpalettes.length - 1);
+	// numeric.sqrteq(stddev);
+	// return numeric.sum(stddev);
 };
 
-// TODO: Switch everything (including webppl version) to use this
 function saveStatsAndSamples(name, palettes, otherStats) {
 	if (otherStats === undefined) otherStats = {};
 	var dirname = 'color/results/' + name;
