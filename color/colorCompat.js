@@ -6,6 +6,7 @@ var bounds = require('src/boundsTransforms');
 var assert = require('assert');
 var colorComp = require('colorcompatibility');
 var colorSpaces = require('colorcompatibility/colorSpaces');
+var colorUtils = require('color/utils');
 
 var map = function(fn, ar) {
   return ar.length === 0 ? [] : [fn(ar[0])].concat(map(fn, ar.slice(1)));
@@ -277,6 +278,8 @@ var makeProgram = function(opts) {
 
 	// ----------------------------------------------------------------------------
 
+	var trainingData = colorUtils.loadTrainingData(3.7);
+
 	var generate = function(params) {
 		globalStore.params = params;
 
@@ -308,10 +311,21 @@ var makeProgram = function(opts) {
 			[r5, g5, b5]
 		];
 
-		// Factor goes here
+		// // Factor goes here
+		// factorFunc(function() {
+		// 	var score = colorComp.getRating(palette.map(cSpace.toRGB));
+		// 	return gaussFactor(score, 5, 0.1);
+		// });
+
 		factorFunc(function() {
-			var score = colorComp.getRating(palette.map(cSpace.toRGB));
-			return gaussFactor(score, 5, 0.1);
+			var trainPalette = trainingData.palettes[randomIntegerERP.sample([trainingData.palettes.length])];
+			var f = 0;
+			for (var i = 0; i < 5; i++) {
+				f = f + gaussFactor(palette[i][0], trainPalette[i][0], 0.1);
+				f = f + gaussFactor(palette[i][1], trainPalette[i][1], 0.1);
+				f = f + gaussFactor(palette[i][2], trainPalette[i][2], 0.1);
+			}
+			return f;
 		});
 
 		return palette;
@@ -366,7 +380,7 @@ var makeProgram = function(opts) {
 var defaultParams = {
 	verbosity: 3,
 	nSamples: 100,
-	nSteps: 300,
+	nSteps: 400,
 	convergeEps: 0.1,
 	initLearnrate: 1,
 
@@ -529,6 +543,12 @@ params['fourLayer_n3x4'] = {
 	variationalParams: { entropyRegularizeWeight: entRegWeight }
 };
 
+// Six layer
+params['sixLayer'] = {
+	guideParams: { family: 'neural', nn_arch: repeat(6, function() { return {n:3}; }) },
+	// variationalParams: { entropyRegularizeWeight: entRegWeight }
+};
+
 // ----------------------------------------------------------------------------
 
 
@@ -557,7 +577,7 @@ var runTest = function(name, allowZeroDerivatives, outputName) {
 	if (p.testGuideParams !== undefined) {
 		otherOpts.testGuideParams = p.testGuideParams;
 	}
-	require('color/utils').saveStatsAndSamples(outputName, palettes, otherOpts);
+	colorUtils.saveStatsAndSamples(outputName, palettes, otherOpts);
 	variational.saveParams(result.params, 'color/results/' + outputName + '/params.txt');
 };
 
@@ -565,7 +585,7 @@ var runNaiveForward = function() {
 	var palettes = repeat(nSamps, function() {
 		return util.runWithAddress(target, '');
 	});
-	require('color/utils').saveStatsAndSamples('naiveForward', palettes);
+	colorUtils.saveStatsAndSamples('naiveForward', palettes);
 };
 
 // ----------------------------------------------------------------------------
@@ -573,13 +593,14 @@ var runNaiveForward = function() {
 // runNaiveForward();
 // runTest('meanField', true, 'derp');
 // runTest('meanField_entReg', true, 'meanField_entReg5_3');
-// runTest('neural_baseline', true, 'oneLayer_3');
+// runTest('neural_baseline', true, 'oneLayer');
 // runTest('oneLayer', true, 'oneLayer_entReg5_mixtureSameNet_3');
 // runTest('oneLayer_rectLin', true, 'oneLayer_entReg5_rectLin_3');
 // runTest('oneLayer_n10', true, 'oneLayer_entReg5_n10_3');
 // runTest('twoLayer_n10n5', true, 'twoLayer_entReg5_n10n5_3');
 // runTest('threeLayer_n12n6n3', true, 'threeLayer_entReg5_n12n6n3_3');
-runTest('fourLayer_n3x4', true, 'fourLayer_entReg5_n3x4_3');
+// runTest('fourLayer_n3x4', true, 'fourLayer_n3x4_3');
+runTest('sixLayer', true);
 
 
 

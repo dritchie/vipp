@@ -50,7 +50,6 @@ function computeDiversity(palettes) {
 		}
 	}
 	var cvflat = _.flatten(covar);
-	// return Math.sqrt(numeric.sum(numeric.mul(cvflat, cvflat)));
 	return Math.sqrt(numeric.sum(numeric.mul(cvflat, cvflat)) / cvflat.length);
 
 	// // Sum of stddevs
@@ -65,6 +64,28 @@ function computeDiversity(palettes) {
 	// return numeric.sum(stddev);
 };
 
+function loadTrainingData(ratingThreshold) {
+	var ratings = fs.readFileSync(__dirname + '/data/mTurk_targets.txt').toString().split('\n').map(parseFloat);
+	var palettes = fs.readFileSync(__dirname + '/data/mTurk_data.txt').toString().split('\n').map(function(d) {
+		var nums = d.split(',').map(parseFloat);
+		var pal = [];
+		for (var i = 0; i < 5; i++)
+			pal.push([nums[i], nums[5+i], nums[10+i]]);
+		return pal;
+	});
+	var zipped = _.zip(palettes, ratings);
+	var filtered = _.filter(zipped, function(x) { return x[1] >= ratingThreshold; });
+	var unzipped = _.unzip(filtered);
+
+	return {
+		palettes: unzipped[0],
+		ratings: unzipped[1]
+	}
+}
+// // TEST
+// var dat = loadTrainingData(3.7);
+// saveStatsAndSamples('trainingData_3.7', dat.palettes, {trueRatings: dat.ratings});
+
 function saveStatsAndSamples(name, palettes, otherStats) {
 	if (otherStats === undefined) otherStats = {};
 	var dirname = 'color/results/' + name;
@@ -75,7 +96,12 @@ function saveStatsAndSamples(name, palettes, otherStats) {
 	for (var i = 0; i < palettes.length; i++) {
 		var rating = colorCompat.getRating(palettes[i]);
 		avgRating += rating;
-		drawPalette(palettes[i], dirname + '/' + rating + '.png');
+		var filename;
+		if (otherStats.trueRatings !== undefined)
+			filename = dirname + '/' + rating + '_(' + otherStats.trueRatings[i] + ').png';
+		else
+			filename = dirname + '/' + rating + '.png';
+		drawPalette(palettes[i], filename);
 	}
 	avgRating /= palettes.length;
 	var diversity = computeDiversity(palettes);
@@ -87,5 +113,9 @@ function saveStatsAndSamples(name, palettes, otherStats) {
 }
 
 module.exports = {
+	loadTrainingData: loadTrainingData,
 	saveStatsAndSamples: saveStatsAndSamples
 };
+
+
+
