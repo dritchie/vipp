@@ -15,6 +15,8 @@
 \newcommand{\transform}{g_\theta}
 \newcommand{\grad}{\nabla_\theta}
 \newcommand{\expect}{\mathbb{E}}
+\newcommand{\weight}{w}
+\newcommand{\normweight}{\tilde{w}}
 
 % -----------------------------------------------------------------------------
 
@@ -65,3 +67,11 @@ KL(\target, \guide) &= \int \target(\var) \log \frac{\target(\var)}{\guide(\var)
 \grad \text{EUBO}(\guide, \target) &= \grad \expect_{\target(\var)} [ \log \unnormTarget(\var) - \log \guide(\var) ] \\
 &= \expect_{\target(\var)} [ \grad (\log \unnormTarget(\var) - \log \guide(\var) ) ] \\
 &= -\expect_{\target(\var)} [ \grad \log \guide(\var) ]
+
+% Importance-weighted ELBO gradient
+&\grad \expect_{\guide(\var)} [ \log \frac{1}{k} \sum_{i=1}^{k} \frac{\target(\var_i)}{\guide(\var_i)} ] \\
+&= \grad \expect_{\guide(\var)} [ \log \frac{1}{k} \sum_{i=1}^{k} \weight(\var_i) ] \\
+&= \int \grad (\guide(\var)  \log \frac{1}{k} \sum_{i=1}^{k} \weight(\var_i) ) \\
+&= \int \grad \guide(\var) \cdot \log \frac{1}{k} \sum_{i=1}^{k} \weight(\var_i) +  \int \guide(\var) \cdot \grad \log \frac{1}{k} \sum_{i=1}^{k} \weight(\var_i) \\
+&= \int \guide(\var) \grad \log \guide(\var) \log \frac{1}{k} \sum_{i=1}^{k} \weight(\var_i) +  \int \guide(\var) \sum_{i=1}^{k} \normweight(\var_i) \grad \log \weight(\var_i) \\
+&= \expect_{\guide(\var)} [ \grad \log \guide(\var) \log \frac{1}{k} \sum_{i=1}^{k} \weight(\var_i) - \sum_{i=1}^{k} \normweight(\var_i) \grad \log \guide(\var_i) ]
