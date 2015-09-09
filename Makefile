@@ -1,5 +1,5 @@
 # AD stuff
-ADFILES = $(wildcard src/*.adjs)
+ADFILES = $(shell find . -type f -name '*.adjs')
 MACROS = src/ad/macros.js
 TRANSFORM = src/ad/transform
 TRANSFORMLIB = src/ad/transform.js

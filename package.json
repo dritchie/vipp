@@ -19,7 +19,8 @@
     "esprima": "^2.1.0",
     "estraverse": "^4.1.0",
     "colorcompatibility": "~0.0.2",
-    "three": "~0.71.0"
+    "three": "~0.71.0",
+    "minimist": "~1.2.0"
   },
   "bugs": {
     "url": "https://github.com/dritchie/vipp/issues"

@@ -6,12 +6,16 @@ var adtransform = require('./ad/transform.js').transform;
 var namingtransform = require('./naming/naming.js').transform;
 
 
-function compile(code) {
+function compile(code, opts) {
+	opts = opts === undefined ? {} : opts;
+	var doNamingTransform = opts.doNamingTransform === undefined ? true : opts.doNamingTransform;
+	var doADTransform = opts.doADTransform === undefined ? true : opts.doADTransform;
 	// Apply source transforms
 	code = '(function() {\n' + code + '\n})\n';
-	code = namingtransform(code);
-	// require('fs').writeFileSync('test.js', code);
-	code = adtransform(code);
+	if (doNamingTransform)
+		code = namingtransform(code);
+	if (doADTransform)
+		code = adtransform(code);
 	// Eval the code to get a callable thunk
 	var fn = eval(code);
 	var thunk = function() {

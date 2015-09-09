@@ -4,22 +4,27 @@
 var vipp = require('./src/main');
 var fs = require('fs');
 var syscall = require('child_process').execSync;
+var parseArgs = require('minimist');
 
 function main() {
 	// Parse args
-	var args = process.argv.slice(2);
-	var filename = args[0];
+	var args = parseArgs(process.argv.slice(2));
+	console.log(args);
+	var filename = args._[0];
 	if (filename === undefined) {
-		console.log('usage: vipp filename [-s compiledfilename]');
+		console.log('usage: vipp filename [-s compiledfilename] [--nonaming] [--noad]');
 		return;
 	}
 	// Invoke make, to be sure that everything is up-to-date
 	syscall('make', {stdio: null});
 	// Run the thing
 	var code = fs.readFileSync(filename);
-	var ret = vipp.compile(code);
-	if (args.length >= 3 && args[1] == '-s') {
-		var outfilename = args[2];
+	var ret = vipp.compile(code, {
+		doNamingTransform: !args.nonaming,
+		doADTransform: !args.noad
+	});
+	if (args.s !== undefined) {
+		var outfilename = args.s;
 		fs.writeFileSync(outfilename, ret.code);
 	}
 	console.log(ret.fn());
