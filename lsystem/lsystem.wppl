@@ -1,0 +1,85 @@
+// ../webppl/webppl lsystem/lsystem.wppl --require-js lsystem/utils.js
+
+var THREE = utils.require('three');
+
+var vec2 = function(x, y) {
+	var v = Object.create(THREE.Vector2.prototype);
+	THREE.Vector2.call(v, x, y);
+	return v;
+}
+
+var polar2rect = function(r, theta) {
+	return vec2(r*Math.cos(theta), r*Math.sin(theta));
+}
+
+var line = function(start, angle, width, length) {
+	return {
+		start: start,
+		angle: angle,
+		width: width,
+		end: start.clone().add(polar2rect(length, angle))
+	};
+};
+
+var branch = function(depth, currBranch, branches) {
+	var width = 0.9 * currBranch.width;
+	var length = 2;
+	var newang = gaussian(currBranch.angle, Math.PI/8);
+	var newbranch = line(currBranch.end, newang, width, length);
+	var newbranches = branches.concat([newbranch]);
+	// Terminate?
+	if (flip(Math.exp(-0.045*depth))) {
+		// Continue or fork?
+		if (flip(0.5)) {
+			return branch(depth + 1, newbranch, newbranches);
+		} else {
+			var seed1 = line(newbranch.end, newbranch.angle - Math.abs(gaussian(0, Math.PI/6)), newbranch.width, 0);
+			var morebranches = branch(depth + 1, seed1, newbranches);
+			var seed2 = line(newbranch.end, newbranch.angle + Math.abs(gaussian(0, Math.PI/6)), newbranch.width, 0);
+			var evenmorebranches = branch(depth + 1, seed2, morebranches);
+			return evenmorebranches;
+		}
+	} else return newbranches;
+};
+
+var canvas = utils.newCanvas(50, 50);
+var viewport = {xmin: -20, xmax: 20, ymin: -38, ymax: 2};
+
+var generate = function() {
+	var branches = branch(0, line(vec2(0, 0), -Math.PI/2, 0.75, 0), []);
+
+	// Horizonal bilateral symmetry
+	utils.render(canvas, viewport, branches);
+	var img2d = utils.newImageData2D(canvas);
+	var sym = img2d.filledBilateralSymmetryHoriz();
+	factor(gaussianERP.score([1, 0.01], sym));
+
+	return branches;
+};
+
+var result = HashMH(generate, 2000, {verbose: true, justSample: true/*, onlyMAP: true*/});
+// var branches = result.MAP;
+// var branches = result.samples[randomInteger(result.samples.length)].value;
+var branches = result.samples[result.samples.length-1].value;
+
+// var branches = generate();
+
+console.log('# branches:', branches.length);
+
+utils.render(canvas, viewport, branches);
+var img2d = utils.newImageData2D(canvas);
+// console.log(img2d.percentFilled());
+console.log('symmetry score:', img2d.filledBilateralSymmetryHoriz());
+
+utils.renderOut(
+	'lsystem/results/symmetry_MCMC.png',
+	{width: 600, height: 600},
+	viewport,
+	branches
+);
+utils.renderOut(
+	'lsystem/results/symmetry_MCMC_small.png',
+	{width: 50, height: 50},
+	viewport,
+	branches
+);
