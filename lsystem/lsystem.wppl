@@ -42,7 +42,9 @@ var branch = function(depth, currBranch, branches) {
 	} else return newbranches;
 };
 
-var canvas = utils.newCanvas(50, 50);
+var loresW = 100;
+var loresH = 100;
+var canvas = utils.newCanvas(loresW, loresH);
 var viewport = {xmin: -20, xmax: 20, ymin: -38, ymax: 2};
 
 var generate = function() {
@@ -57,10 +59,9 @@ var generate = function() {
 	return branches;
 };
 
-var result = HashMH(generate, 2000, {verbose: true, justSample: true/*, onlyMAP: true*/});
-// var branches = result.MAP;
-// var branches = result.samples[randomInteger(result.samples.length)].value;
-var branches = result.samples[result.samples.length-1].value;
+var result = HashMH(generate, 3000, {verbose: true, justSample: true/*, onlyMAP: true*/});
+var branches = result.MAP;
+// var branches = result.samples[result.samples.length-1].value;
 
 // var branches = generate();
 
@@ -79,7 +80,7 @@ utils.renderOut(
 );
 utils.renderOut(
 	'lsystem/results/symmetry_MCMC_small.png',
-	{width: 50, height: 50},
+	{width: loresW, height: loresH},
 	viewport,
 	branches
 );
