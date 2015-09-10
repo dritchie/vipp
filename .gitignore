@@ -1,9 +1,7 @@
 node_modules
-sandbox/results/*
 erp_scorers.js
 boundsTransforms.js
 experiments/adTest/*.csv
 experiments/convergence/*.csv
 compiledoutput.js
-procmod/results/*
-color/results/*
+*/results/*
