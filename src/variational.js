@@ -5,6 +5,7 @@ var present = require('present');
 var assert = require('assert');
 var _ = require('underscore');
 var fs = require('fs');
+var tensor = require('./tensor');
 
 
 
@@ -200,37 +201,38 @@ function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
 	    newobj[prop] = f(obj[prop]);
 	  return newobj;
 	}
-	var getGrad = function(trace, propName, alsoGetVals) {
+	var getGrad = function(trace, propName, outParamVals) {
 		var traceProp = trace[propName];
 		traceProp.determineFanout();
 		// traceProp.reversePhaseDebug(1.0);
       	traceProp.reversePhase(1.0);
       	// traceProp.print();
       	var ret = { gradient: {} };
-      	if (alsoGetVals) ret.vals = {};
       	for (var name in params.values) {
       		var p = params.values[name];
-      		if (alsoGetVals) ret.vals[name] = p.primal;
       		if (params.used[name]) {
-      			if (!allowZeroDerivatives && p.sensitivity === 0.0) {
+      			// Record any newly-created parameter values
+	      		if (outParamVals !== undefined && !outParamVals.hasOwnProperty(name))
+	      			outParamVals[name] = tensor.map(p, function(x) { return x.primal; });
+      			if (!allowZeroDerivatives && tensor.any(p, function(x) { return x.sensitivity === 0.0; })) {
       				// traceProp.print();
       				// console.log('-------------------------------------------------');
       				console.log('name: ' + name);
-      				console.log('id: ' + p.id);
       				assert(false, 'Found zero in guide ' + propName + ' gradient!');
       			}
-      			ret.gradient[name] = p.sensitivity;
+      			ret.gradient[name] = tensor.vecmap(p, function(x) { return x.sensitivity; });
       		}
       	}
       	return ret;
 	}
 	return function(trace) {
+		var vals = params.values;
 		params.values = objMap(params.values, function(p) {
-			return ad_maketape(p);
+			return tensor.map(p, function(x) { return ad_maketape(x); });
 		});
 		params.used = {};
 		guide('', params, args);
-		var scoreRet = getGrad(trace, 'score', true);
+		var scoreRet = getGrad(trace, 'score', vals);
 		var grads = {
 			scoreGrad: scoreRet.gradient
 		};
@@ -238,7 +240,7 @@ function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
 			trace.score.resetState();
 			grads.entropyGrad = getGrad(trace, 'entropy').gradient;
 		}
-		params.values = scoreRet.vals;
+		params.values = vals;
       	return grads;
 	}
 }
@@ -650,7 +652,7 @@ function factor(name, num) {
 	coroutine.factor(name, num);
 }
 
-// Create/lookup a param.
+// Create/lookup a scalar param.
 // May have an initial val, a transform, and  a random sampler.
 // Transform specifies how the value should be transformed.
 // The sampler may be used to sample an initial val (if 'initialVal' is undefined).
@@ -680,6 +682,22 @@ function param(name, params, initialVal, transform, sampler, hypers, outnames) {
 		return transform.fwd(p);
 	else
 		return p;
+}
+
+// Create/lookup a matrix/vector param
+function paramTensor(name, params, dim, initialVal, sampler, hypers) {
+	if (!params.values.hasOwnProperty(name)) {
+		var val;
+		if (initialVal !== undefined) {
+			val = numeric.rep(dim, initialVal);
+		} else {
+			val = tensor.create(dim, function() { return sampler(hypers); });
+		}
+		tensor.mapeq(val, function(x) { return ad_maketape(x); });
+		params.values[name] = val;
+	}
+	params.used[name] = true;
+	return params.values[name];
 }
 
 // IO for parameters
