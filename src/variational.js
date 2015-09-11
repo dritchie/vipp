@@ -28,7 +28,7 @@ function makeParams() {
 
 
 // Define the variational inference coroutine
-function Trace() {};
+function Trace() { this.temp = 1; };
 Trace.prototype = {
 	copy: function(otherTrace) {
 		this.score = otherTrace.score;
@@ -100,10 +100,11 @@ Trace.prototype = {
 	},
 	factorRaw: function(name, num) {
 		var oldscore = this.score;
-		this.score += num;
+		this.score += this.temp * num;
 		if (!isFinite(this.score)) {
 			console.log('old score: ' + oldscore);
 			console.log('factor score: ' + num);
+			console.log('temp: ' + this.temp);
 			console.log('new score: ' + this.score);
 			assert(false, 'Factor has non-finite score!');
 		}
@@ -249,6 +250,7 @@ function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
 // opts: options controlling inference behavior
 // Returns the inferred variational params
 function infer(target, guide, args, opts) {
+
 	// Extract options
 	opts = opts || {};
 	function opt(val, defaultval) {
@@ -284,6 +286,9 @@ function infer(target, guide, args, opts) {
 		var vDecayRate = opt(opts.vDecayRate, 0.99);
 		var adamEps = opt(opts.adamEps, 1e-8)
 	} else throw 'Unrecognized optimizeMethod "' + optimizeMethod + '"';
+
+	var tempSchedule = opt(opts.tempSchedule, function() { return 1; });
+
 
 	// Define the regularizer for variational parameters
 	if (regularize !== undefined) {
@@ -344,7 +349,7 @@ function infer(target, guide, args, opts) {
 	}
 
 	// Estimate the parameter gradient using the ELBO
-	var estimateGradientELBO = function(componentWiseAStar) {
+	var estimateGradientELBO = function(stepNum, componentWiseAStar) {
 		// Initialize accumulators
 		var sumScoreDiff = 0.0;
 		var sumGrad = {};
@@ -352,6 +357,7 @@ function infer(target, guide, args, opts) {
 		var sumGradSq = {};
 		var sumWeightedGradSq = {};
 		// Draw samples from the guide, score using the target
+		trace.temp = tempSchedule(stepNum, nSteps);
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
@@ -406,7 +412,9 @@ function infer(target, guide, args, opts) {
 				if (!allowZeroDerivatives && elboGradEst[name] === 0.0) {
 					console.log('name: ' + name);
 					console.log('sumWeightedGrad: ' + sumWeightedGrad[name]);
+					console.log('sumGrad: ' + sumGrad[name]);
 					console.log('sumGrad*aStar: ' + sumGrad[name]*aStar);
+					console.log('sumScoreDiff: ' + sumScoreDiff);
 					assert(false, 'zero in elboGradEst! - usually only happens when nSamples = 1.');
 				}
 			}
@@ -461,13 +469,14 @@ function infer(target, guide, args, opts) {
 	}
 
 	// Estimate the parameter gradient using the EUBO
-	var estimateGradientEUBO = function() {
+	var estimateGradientEUBO = function(stepNum) {
 		var gradEst = {};
 		var sumScoreDiff = 0.0;
 		for (var s = 0; s < nSamples; s++) {
 			if (verbosity > 3)
 				console.log('  Sample ' + s + '/' + nSamples);
 			var chain = getPosteriorSample();
+			chain.temp = tempSchedule(stepNum, nSteps);
 			var targetScore = chain.score;
 			// Save the trace so we can restore it after the AD gradient run
 			var oldChain = new Trace(); oldChain.copy(chain);
@@ -502,16 +511,16 @@ function infer(target, guide, args, opts) {
 	// Pre-define the function that'll compute the gradient estimator, depending
 	//    upon which method was requested
 	if (gradientOpts.method === 'ELBO') {
-		var estimateGradient = function() { return estimateGradientELBO(false); };
+		var estimateGradient = function(stepNum) { return estimateGradientELBO(stepNum, false); };
 	} else if (gradientOpts.method === 'EUBO') {
 		var estimateGradient = estimateGradientEUBO;
 	} else if (gradientOpts.method == 'ELBO|EUBO') {
 		var mixWeight = gradientOpts.mixWeight;
-		var estimateGradient = function() {
+		var estimateGradient = function(stepNum) {
 			if (Math.random() < mixWeight)
-				return estimateGradientELBO(false);
+				return estimateGradientELBO(stepNum, false);
 			else
-				return estimateGradientEUBO();
+				return estimateGradientEUBO(stepNum);
 		};
 	}
 
@@ -531,7 +540,7 @@ function infer(target, guide, args, opts) {
 			console.log('Variational iteration ' + (currStep+1) + '/' + nSteps);
 		if (verbosity > 3)
 			console.log('  params: ' + JSON.stringify(params.values));
-		var est = estimateGradient();
+		var est = estimateGradient(currStep);
 		var gradEst = est.grad;
 		// Record some statistics, if requested
 		if (recordStepStats) {
@@ -682,13 +691,26 @@ function loadParams(filename) {
 	params.values = JSON.parse(fs.readFileSync(filename).toString());
 	return params;
 };
+function getTransformedParamVals(params) {
+	var prms = {};
+	for (var name in params.values) {
+		var val = params.values[name];
+		var t = params.transforms[name];
+		if (t !== undefined) {
+			val = t.fwd(val);
+		}
+		prms[name] = val;
+	}
+	return prms;
+}
 
 module.exports = {
 	variational: {
 		makeParams: makeParams,
 		infer: infer,
 		saveParams: saveParams,
-		loadParams: loadParams
+		loadParams: loadParams,
+		getTransformedParamVals: getTransformedParamVals
 	},
 	sample: sample,
 	factor: factor,

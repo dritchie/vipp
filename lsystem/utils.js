@@ -1,6 +1,7 @@
 var fs = require('fs');
 var Canvas = require('canvas');
 var THREE = require('three');
+var assert = require('assert');
 
 function render(canvas, viewport, branches) {
 	if (viewport === undefined)
@@ -102,11 +103,33 @@ ImageData2D.prototype = {
 };
 
 
+var TempSchedules = {
+
+	linear: function(i, n) {
+		return Math.max(i/n, 0.001);
+	},
+	linearStop: function(stop) {
+		return function(i, n) {
+			var stopi = stop*n;
+			return Math.min(1, Math.max(i/stopi, 0.001));
+		}
+	},
+	asymptotic: function(rate) {
+		return function(i, n) {
+			var x = i/n + 0.001;
+			return Math.max(0.001, 1 + (1 / (-rate*x)));
+		}
+	}
+
+};
+
+
 module.exports = {
 	render: render,
 	renderOut: renderOut,
 	newImageData2D: function(canvas) { return new ImageData2D(canvas); },
 	newCanvas: function(w, h) { return new Canvas(w, h); },
+	TempSchedules: TempSchedules,
 	require: require	// so that webppl code can just require whatever code it wants
 };
 

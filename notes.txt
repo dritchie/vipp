@@ -1,0 +1,3 @@
+
+node-webgl works if you downgrade to node 0.11.12 (nvm use 0.11.12). 
+canvas no longer works, though (has to do with differences in the V8 API when 0.11.x rolled over to 0.12.x).
