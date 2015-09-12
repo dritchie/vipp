@@ -220,7 +220,7 @@ function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
       				console.log('name: ' + name);
       				assert(false, 'Found zero in guide ' + propName + ' gradient!');
       			}
-      			ret.gradient[name] = tensor.vecmap(p, function(x) { return x.sensitivity; });
+      			ret.gradient[name] = tensor.map(p, function(x) { return x.sensitivity; });
       		}
       	}
       	return ret;
@@ -297,7 +297,7 @@ function infer(target, guide, args, opts) {
 		var rweight = regularize.weight;
 		if (regularize.method === 'L2') {
 			regularize = function(p0, p1, learningRate) {
-				return p1 - learningRate * rweight * p0;
+				return numeric.sub(p1, numeric.mul(learningRate*rweight, p0));
 			};
 		} else
 		if (regularize.method === 'L1') {
@@ -306,13 +306,14 @@ function infer(target, guide, args, opts) {
 			// https://lingpipe.files.wordpress.com/2008/04/lazysgdregression.pdf
 			// http://aclweb.org/anthology/P/P09/P09-1054.pdf
 			regularize = function(p0, p1, learningRate) {
-				if (p1 > 0.0) {
-					return Math.max(0.0, p1 - rweight * learningRate);
-				}
-				else if (p1 < 0.0) {
-					return Math.min(0.0, p1 + rweight * learningRate);
-				}
-				else return p1;
+				var w = rweight*learningRate;
+				return tensor.map(p1, function(x) {
+					if (x > 0)
+						return Math.max(0, p1 - w);
+					else if (x < 0)
+						return Math.min(0, p1 + w);
+					else return x;
+				});
 			}
 		}
 	} else regularize = function(p0, p1, learningRate) { return p1; };
@@ -377,41 +378,42 @@ function infer(target, guide, args, opts) {
 			}
 			for (var name in scoreGrad) {
 				var g = scoreGrad[name];
+				var dim = numeric.dim(g);
 				if (!sumGrad.hasOwnProperty(name)) {
-					sumGrad[name] = 0.0;
-					sumWeightedGrad[name] = 0.0;
-					sumGradSq[name] = 0.0;
-					sumWeightedGradSq[name] = 0.0;
+					sumGrad[name] = numeric.rep(dim, 0);
+					sumWeightedGrad[name] = numeric.rep(dim, 0);
+					sumGradSq[name] = numeric.rep(dim, 0);
+					sumWeightedGradSq[name] = numeric.rep(dim, 0);
 				}
-				sumGrad[name] += g;
-				var weightedGrad = g * scoreDiff;
+				numeric.addeq(sumGrad[name], g);
+				var weightedGrad = numeric.mul(g, scoreDiff);
 				if (doEntropyRegularization)
-					weightedGrad += entropyRegularizeWeight * grads.entropyGrad[name];
-				sumWeightedGrad[name] += weightedGrad;
-				var gSq = g*g;
-				sumGradSq[name] += gSq;
-				var weightedGradSq = gSq * scoreDiff;
-				sumWeightedGradSq[name] += weightedGradSq;
+					numeric.addeq(weightedGrad, numeric.mul(entropyRegularizeWeight, grads.entropyGrad[name]));
+				numeric.addeq(sumWeightedGrad[name], weightedGrad);
+				var gSq = numeric.mul(g, g);
+				numeric.addeq(sumGradSq[name], gSq);
+				var weightedGradSq = numeric.mul(gSq, scoreDiff);
+				numeric.addeq(sumWeightedGradSq[name], weightedGradSq);
 			}
 		}
 		// Compute AdaGrad learning rate and control variate
 		var elboGradEst = {};
 		if (componentWiseAStar) {
 			for (var name in sumGrad) {
-				var aStar = sumWeightedGradSq[name] / sumGradSq[name];
-				elboGradEst[name] = (sumWeightedGrad[name] - sumGrad[name]*aStar)/nSamples;
+				var aStar = numeric.div(sumWeightedGradSq[name] / sumGradSq[name]);
+				elboGradEst[name] = numeric.div(numeric.sub(sumWeightedGrad[name], numeric.mul(sumGrad[name], aStar)), nSamples);
 			}
 		} else {
 			var numerSum = 0.0;
 			var denomSum = 0.0;
 			for (var name in sumGrad) {
-				numerSum += sumWeightedGradSq[name];
-				denomSum += sumGradSq[name];
+				numerSum += numeric.sum(sumWeightedGradSq[name]);
+				denomSum += numeric.sum(sumGradSq[name]);
 			}
 			var aStar = numerSum / denomSum;
 			for (var name in sumGrad) {
-				elboGradEst[name] = (sumWeightedGrad[name] - sumGrad[name]*aStar)/nSamples;
-				if (!allowZeroDerivatives && elboGradEst[name] === 0.0) {
+				elboGradEst[name] = numeric.div(numeric.sub(sumWeightedGrad[name], numeric.mul(sumGrad[name], aStar)), nSamples);
+				if (!allowZeroDerivatives && tensor.any(elboGradEst[name], function(x) { x === 0; })) {
 					console.log('name: ' + name);
 					console.log('sumWeightedGrad: ' + sumWeightedGrad[name]);
 					console.log('sumGrad: ' + sumGrad[name]);
@@ -494,13 +496,14 @@ function infer(target, guide, args, opts) {
 			sumScoreDiff += scoreDiff;
 			for (var name in gradient) {
 				var g = gradient[name];
+				var dim = numeric.dim(g);
 				if (!gradEst.hasOwnProperty(name))
-					gradEst[name] = 0.0;
-				gradEst[name] += g;
+					gradEst[name] = numeric.rep(dim, 0);
+				numeric.addeq(gradEst[name], g);
 			}
 		}
 		for (var name in gradEst)
-			gradEst[name] /= nSamples;
+			numeric.diveq(gradEst[name], nSamples);
 		if (verbosity > 2) {
 			console.log('  gradEst: ' +  JSON.stringify(gradEst));
 		}
@@ -567,7 +570,8 @@ function infer(target, guide, args, opts) {
 		var maxDelta = 0;
 		for (var name in gradEst) {
 			var grad = gradEst[name];
-			if (!allowZeroDerivatives && grad === 0.0) {
+			var dim = numeric.dim(grad);
+			if (!allowZeroDerivatives && tensor.any(grad, function(x) { x === 0.0; })) {
 				console.log('name: ' + name);
 				console.log('grad: ' + grad);
 				assert(false,
@@ -576,21 +580,21 @@ function infer(target, guide, args, opts) {
 			var weight;
 			if (optimizeMethod === 'AdaGrad') {
 				if (!runningG2.hasOwnProperty(name))
-					runningG2[name] = 0.0;
-				runningG2[name] += grad*grad;
-				weight = learnRate / Math.sqrt(runningG2[name]);
+					runningG2[name] = numeric.rep(dim, 0);
+				numeric.addeq(runningG2[name], numeric.mul(grad, grad));
+				weight = numeric.div(learnRate, numeric.sqrt(runningG2[name]));
 			} else if (optimizeMethod === 'Adam') {
 				if (!runningM.hasOwnProperty(name)) {
-					runningM[name] = 0;
-					runningV[name] = 0;
+					runningM[name] = numeric.rep(dim, 0);
+					runningV[name] = numeric.rep(dim, 0);
 				}
-				runningM[name] = mDecayRate*runningM[name] + (1-mDecayRate)*grad;
-				runningV[name] = vDecayRate*runningV[name] + (1-vDecayRate)*(grad*grad);
-				var mt = runningM[name] / (1 - Math.pow(mDecayRate, currStep+1));
-				var vt = runningV[name] / (1 - Math.pow(vDecayRate, currStep+1));
-				weight = stepSize * mt / (Math.sqrt(vt) + adamEps);
+				runningM[name] = numeric.add(numeric.mul(mDecayRate, runningM[name]), numeric.mul(1-mDecayRate), grad);
+				runningV[name] = numeric.add(numeric.mul(vDecayRate, runningV[name]), numeric.mul(1-vDecayRate), numeric.mul(grad, grad));
+				var mt = numeric.div(runningM[name], (1 - Math.pow(mDecayRate, currStep+1)));
+				var vt = numeric.div(runningV[name], (1 - Math.pow(vDecayRate, currStep+1)));
+				weight = numeric.div(numeric.mul(stepSize, mt), numeric.add(numeric.sqrt(vt), adamEps));
 			}
-			if (!isFinite(weight)) {
+			if (!numeric.isFinite(weight)) {
 				console.log('name: ' + name);
 				console.log('grad: ' + grad);
 				if (optimizeMethod === 'AdaGrad')
@@ -601,18 +605,19 @@ function infer(target, guide, args, opts) {
 				}
 				assert(false, "Detected non-finite param update weight!");
 			}
-			var delta = weight * grad;
+			var delta = numeric.mul(weight, grad);
 			var p0 = params.values[name];
-			var p1 = p0 + delta;
+			var p1 = numeric.add(p0, delta);
 			params.values[name] = regularize(p0, p1, weight);
-			// When recording changes, do this in the transformed space
+
+			// When recording changes to scalar params, do this in the transformed space
 			var t = params.transforms[name];
 			if (t !== undefined) {
-				var tp1 = t.fwd(p1);
-				var tp0 = t.fwd(p0);
-				delta = tp1 - tp0;
+				var tp1 = t.fwd(p1[0]);
+				var tp0 = t.fwd(p0[0]);
+				delta = [tp1 - tp0];
 			}
-			maxDelta = Math.max(Math.abs(delta), maxDelta);
+			maxDelta = Math.max(tensor.maxreduce(numeric.abs(delta)), maxDelta);
 		}
 		// Check for convergence
 		maxDeltaAvg = maxDeltaAvg * 0.9 + maxDelta;
@@ -673,11 +678,11 @@ function param(name, params, initialVal, transform, sampler, hypers, outnames) {
 				assert(false, 'initial parameter value is non-finite!');
 			}
 		}
-		params.values[name] = ad_maketape(ad_primal(initialVal));
+		params.values[name] = [ad_maketape(ad_primal(initialVal))];
 	}
 	params.transforms[name] = transform;
 	params.used[name] = true;
-	var p = params.values[name];
+	var p = params.values[name][0];
 	if (transform !== undefined)
 		return transform.fwd(p);
 	else
