@@ -18,7 +18,10 @@ var polar2rect = function(r, theta) {
 	return new THREE.Vector2(r*Math.cos(theta), r*Math.sin(theta));
 };
 
-var line = function(start, angle, width, length) {
+
+
+
+var mkbranch = function(start, angle, width, length) {
 	return {
 		start: start,
 		angle: angle,
@@ -26,6 +29,7 @@ var line = function(start, angle, width, length) {
 		end: start.clone().add(polar2rect(length, angle))
 	};
 };
+
 
 
 // var loresW = 50;
@@ -79,22 +83,26 @@ var makeProgram = function(opts) {
 
 	// ------------------------------------------------------------------------
 
-	var branch = function(depth, currBranch, branches) {
-		var width = 0.9 * currBranch.width;
+	var branch = function(depth, currState, branches) {
+		var width = 0.9 * currState.width;
 		var length = 2;
-		var newang = currBranch.angle + _gaussian(0, Math.PI/8);
-		var newbranch = line(currBranch.end, newang, width, length);
+		var newang = currState.angle + _gaussian(0, Math.PI/8);
+		var newbranch = mkbranch(currState.pos, newang, width, length);
 		branches.push(newbranch);
 		// Terminate?
 		if (_flip(Math.exp(-0.045*depth))) {
 			// Continue or fork?
 			if (_flip(0.5)) {
-				branch(depth + 1, newbranch, branches);
+				branch(depth + 1, {pos: newbranch.end, angle: newbranch.angle, width: newbranch.width}, branches);
 			} else {
-				var seed1 = line(newbranch.end, newbranch.angle - Math.abs(_gaussian(0, Math.PI/6)), newbranch.width, 0);
-				branch(depth + 1, seed1, branches);
-				var seed2 = line(newbranch.end, newbranch.angle + Math.abs(_gaussian(0, Math.PI/6)), newbranch.width, 0);
-				branch(depth + 1, seed2, branches);
+				var branchState = {
+					pos: newbranch.end,
+					angle: newbranch.angle - Math.abs(_gaussian(0, Math.PI/6)),
+					width: newbranch.width
+				};
+				branch(depth + 1, branchState, branches);
+				branchState.angle = newbranch.angle + Math.abs(_gaussian(0, Math.PI/6));
+				branch(depth + 1, branchState, branches);
 			}
 		}
 	};
@@ -102,7 +110,12 @@ var makeProgram = function(opts) {
 	var generate = function(params) {
 		globals.params = params;
 		var branches = [];
-		branch(0, line(new THREE.Vector2(0, 0), -Math.PI/2, 0.75, 0), branches);
+		var startState = {
+			pos: new THREE.Vector2(0, 0),
+			angle: -Math.PI/2,
+			width: 0.75
+		}
+		branch(0, startState, branches);
 
 		factorFunc(function() {
 			var f = 0;
@@ -135,7 +148,7 @@ var result = variational.infer(target, guide, undefined, {
 	initLearnrate: 1,
 
 	// tempSchedule: lutils.TempSchedules.linearStop(0.5)
-	tempSchedule: lutils.TempSchedules.asymptotic(10)
+	// tempSchedule: lutils.TempSchedules.asymptotic(10)
 });
 
 var outname = 'test';
@@ -157,7 +170,7 @@ for (var i = 0; i < 20; i++) {
 
 
 // // TEST
-// var generate = makeProgram({family: 'guide'});
+// var generate = makeProgram({family: 'target'});
 // var branches = generate();
 // console.log(branches.length);
 // var bbox = new THREE.Box2();
