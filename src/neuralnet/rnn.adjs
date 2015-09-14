@@ -2,6 +2,7 @@
 var nnutils = require('./utils');
 var assert = require('assert');
 var _ = require('underscore');
+var numeric = require('numeric');
 
 
 // 'globals' contains the params object
@@ -70,7 +71,15 @@ function makeParamPredictor(opts) {
 	}
 	function _getLatentState(node, mapWeights, mapBias, mergeWeights, mergeBias) {
 		var data = treeNodeDataFn(node);
-		var latentState = nn(mapWeights, data, mapBias);
+		////
+		// If there is no data (b/c the tree is empty), then use a zero vector.
+		// Otherwise, normalize the data and map into the latent space.
+		var latentState;
+		if (data === undefined)
+			latentState = numeric.rep([latentN], 0);
+		else
+			latentState = nn(mapWeights, normalizeTreeNodeData(data), mapBias);
+		////
 		if (node.children === undefined || node.children.length === 0)
 			return latentState;
 		assert(node.children.length <= 2);	// Only support binary branching for now
@@ -107,9 +116,10 @@ function makeParamPredictor(opts) {
 
 		predict: function(name, outTransforms, currStateVec, treeRoot) {
 			var currLatentState = getLatentState(treeRoot);
-			var predictWeights = weightMatrix('predictWeights', [outTransforms.length stateVecDim + latentN]);
-			var predictBias = biasVector('predictBias', outTransforms.length);
-			var params = madd(predictWeights, currStateVec.concat(currLatentState), predictBias);
+			var predictWeights = weightMatrix('predictWeights_'+name, [outTransforms.length stateVecDim + latentN]);
+			var predictBias = biasVector('predictBias_'+name, outTransforms.length);
+			var normStateVec = normalizeStateVec(currStateVec);
+			var params = madd(predictWeights, normStateVec.concat(currLatentState), predictBias);
 			for (var i = 0; i < params.length; i++)
 				params[i] = outTransforms[i](params[i]);
 			return params;
