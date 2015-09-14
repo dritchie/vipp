@@ -83,39 +83,51 @@ var makeProgram = function(opts) {
 
 	// ------------------------------------------------------------------------
 
-	var branch = function(depth, currState, branches) {
+	var branch = function(currState, treeRoot, treeNode, branches) {
 		var width = 0.9 * currState.width;
 		var length = 2;
 		var newang = currState.angle + _gaussian(0, Math.PI/8);
 		var newbranch = mkbranch(currState.pos, newang, width, length);
+		treeNode.branch = newbranch;
 		branches.push(newbranch);
 		// Terminate?
-		if (_flip(Math.exp(-0.045*depth))) {
+		if (_flip(Math.exp(-0.045*currState.depth))) {
 			// Continue or fork?
 			if (_flip(0.5)) {
-				branch(depth + 1, {pos: newbranch.end, angle: newbranch.angle, width: newbranch.width}, branches);
+				var newNode = {};
+				treeNode.children = [newNode];
+				branch({
+					depth: currState.depth + 1,
+					pos: newbranch.end,
+					angle: newbranch.angle,
+					width: newbranch.width},
+				treeRoot, newNode, branches);
 			} else {
 				var branchState = {
+					depth: currState.depth + 1,
 					pos: newbranch.end,
 					angle: newbranch.angle - Math.abs(_gaussian(0, Math.PI/6)),
 					width: newbranch.width
 				};
-				branch(depth + 1, branchState, branches);
+				treeNode.children = [{}, {}];
+				branch(branchState, treeRoot, treeNode.children[0], branches);
 				branchState.angle = newbranch.angle + Math.abs(_gaussian(0, Math.PI/6));
-				branch(depth + 1, branchState, branches);
+				branch(branchState, treeRoot, treeNode.children[1], branches);
 			}
 		}
 	};
 
 	var generate = function(params) {
 		globals.params = params;
+		var treeRoot = {};
 		var branches = [];
 		var startState = {
+			depth: 0,
 			pos: new THREE.Vector2(0, 0),
 			angle: -Math.PI/2,
 			width: 0.75
 		}
-		branch(0, startState, branches);
+		branch(startState, treeRoot, treeRoot, branches);
 
 		factorFunc(function() {
 			var f = 0;
