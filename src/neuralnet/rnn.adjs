@@ -1,0 +1,127 @@
+
+var nnutils = require('./utils');
+var assert = require('assert');
+var _ = require('underscore');
+
+
+// 'globals' contains the params object
+// 'treeNodeDataFn' extracts a state vector from a tree node
+function makeParamPredictor(opts) {
+
+	var globals = opts.globals;
+	var treeNodeDataFn = opts.treeNodeDataFn;
+	var latentN = opts.latentN;
+	var nNormalizeSamples = opts.nNormalizeSamples;
+
+
+	// These get filled in at runtime
+	var stateVecDim;
+	var treeNodeDataDim;
+
+
+	// Can't be passed in via opts b/c it needs to be AD'ed.
+	var activationFn = function(x) { return 1.7159 * Math.tanh(2/3 * x); };
+
+
+	var normCache = nnutils.makeInputSampleCache(nNormalizeSamples);
+	function normalizeStateVec(stateVec) {
+		return nnutils.normalizeInputs('stateVec', stateVec, normCache);
+	}
+	function normalizeTreeNodeData(node) {
+		return nnutils.normalizeInputs('treeNode', treeNodeDataFn(node), normCache);
+	}
+
+
+	var HYPERS = [0, 1];
+	function weightMatrix(name, dims) {
+		return paramTensor(name, globals.params, dims, undefined, gaussianERP.sample, HYPERS);
+	}
+	function biasVector(name, length) {
+		return paramTensor(name, globals.params, [length], undefined, gaussianERP.sample, HYPERS);
+	}
+
+
+	// Matrix fused multiply add
+	function madd(A, x, b) {
+		var n = b.length;
+		var m = x.length;
+		var out = b.slice();
+		for (var i = 0; i < n; i++) {
+			for (var j = 0; j < m; j++) {
+				out[i] = out[i] + (A[i][j] * x[j]);
+			}
+		}
+		return out;
+	}
+
+	// Neural net layer
+	function nn(A, x, b) {
+		return madd(A, x, b).map(activationFn);
+	}
+
+
+	// TODO: memoize
+	function getLatentState(treeRoot) {
+		var mapWeights = weightMatrix('latentMapWeights', [latentN, treeNodeDataDim]);
+		var mapBias = biasVector('latentMapBias', latentN);
+		var mergeWeights = weightMatrix('mergeWeights', [latentN, 2*latentN]);
+		var mergeBias = biasVector('mergeBias', latentN);
+		return _getLatentState(treeRoot, mapWeights, mapBias, mergeWeights, mergeBias);
+	}
+	function _getLatentState(node, mapWeights, mapBias, mergeWeights, mergeBias) {
+		var data = treeNodeDataFn(node);
+		var latentState = nn(mapWeights, data, mapBias);
+		if (node.children === undefined || node.children.length === 0)
+			return latentState;
+		assert(node.children.length <= 2);	// Only support binary branching for now
+		var childrenLatentState;
+		if (node.children.length === 1) {
+			childrenLatentState = _getLatentState(node.children[0], mapWeights, mapBias, mergeWeights, mergeBias)
+		} else {
+			childrenLatentState = nn(
+				mergeWeights,
+				_getLatentState(node.children[0], mapWeights, mapBias, mergeWeights, mergeBias).concat(
+					_getLatentState(node.children[1], mapWeights, mapBias, mergeWeights, mergeBias)),
+				mergeBias
+			);
+		}
+		return nn(mergeWeights, childrenLatentState.concat(latentState), mergeBias);
+	}
+
+
+	return {
+		readyToPredict: function() {
+			return normCache.hasEnoughSamples();
+		},
+
+		collectStateSample: function(stateVec) {
+			stateVecDim = stateVec.length;
+			nnutils.collectSample('stateVec', stateVec, normCache);
+		},
+
+		collectTreeNodeSample: function(node) {
+			var data = treeNodeDataFn(node);
+			treeNodeDataDim = data.length;
+			nnutils.collectSample('treeNode', data, normCache);
+		},
+
+		predict: function(name, outTransforms, currStateVec, treeRoot) {
+			var currLatentState = getLatentState(treeRoot);
+			var predictWeights = weightMatrix('predictWeights', [outTransforms.length stateVecDim + latentN]);
+			var predictBias = biasVector('predictBias', outTransforms.length);
+			var params = madd(predictWeights, currStateVec.concat(currLatentState), predictBias);
+			for (var i = 0; i < params.length; i++)
+				params[i] = outTransforms[i](params[i]);
+			return params;
+		}
+	};
+}
+
+
+module.exports = {
+	makeParamPredictor: makeParamPredictor
+};
+
+
+
+

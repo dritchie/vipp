@@ -1,5 +1,5 @@
-var ad = require('../ad/functions');
 var assert = require('assert');
+var numeric = require('numeric';)
 
 // Create a neural net input sample cache
 function makeInputSampleCache(nSamples) {
@@ -25,21 +25,15 @@ function collectSample(callsite, inputs, inputCache) {
 	if (cacheEntry === undefined) {
 		cacheEntry = {
 			n: 0,
-			mins: [],
-			maxs: []
+			mins: numeric.rep([inputs.length], Number.MAX_VALUE,
+			maxs: numeric.rep([inputs.length], -Number.MAX_VALUE)
 		};
-		for (var i = 0; i < inputs.length; i++) {
-			cacheEntry.mins.push(Number.MAX_VALUE);
-			cacheEntry.maxs.push(-Number.MAX_VALUE);
-		}
 		inputCache[callsite] = cacheEntry;
 	}
 	if (cacheEntry.n < inputCache.nToCollect) {
 		cacheEntry.n++;
-		for (var i = 0; i < inputs.length; i++) {
-			cacheEntry.mins[i] = Math.min(cacheEntry.mins[i], ad.ad_primal(inputs[i]));
-			cacheEntry.maxs[i] = Math.max(cacheEntry.maxs[i], ad.ad_primal(inputs[i]));
-		}
+		numeric.mineq(cacheEntry.mins, inputs);
+		numeric.maxeq(cacheEntry.maxs, inputs);
 	}
 }
 
