@@ -10,8 +10,16 @@ function isscalar(dim) {
 	return dim.length === 0 || dim[0] === undefined;
 }
 
+function getdim(tensor) {
+	var dim = numeric.dim(tensor);
+	// tensors containing AD tapes will have an extra 'undefined' in the dim array
+	if (dim.length > 0 && dim[dim.length-1] === undefined)
+		dim.splice(dim.length-1, 1);
+	return dim;
+}
+
 function create(dim, fn) {
-	if (isscalar(dim))
+	if (dim.length === 0)
 		return fn();
 	else {
 		var x = numeric.rep(dim, 0);
@@ -21,18 +29,20 @@ function create(dim, fn) {
 }
 
 function map(tensor, fn) {
-	var dim = numeric.dim(tensor);
-	if (isscalar(dim))
+	var dim = getdim(tensor);
+	if (dim.length === 0)
 		return fn(tensor);
 	else if (dim.length === 1)
 		return tensor.map(fn);
-	else
+	else {
+		console.log(tensor, dim);
 		return numeric._foreach2(tensor, dim, 0, function(x) { return x.map(fn); });
+	}
 }
 
 function mapeq(tensor, fn) {
-	var dim = numeric.dim(tensor);
-	assert(!isscalar(dim), 'tensor.mapeq does not apply to scalar arguments');
+	var dim = getdim(tensor);
+	assert(dim.length !== 0, 'tensor.mapeq does not apply to scalar arguments');
 	if (dim.length == 1) {
 		for (var i = 0; i < tensor.length; i++)
 			tensor[i] = fn(tensor[i]);
@@ -45,8 +55,8 @@ function mapeq(tensor, fn) {
 }
 
 function foreach(tensor, fn) {
-	var dim = numeric.dim(tensor);
-	if (isscalar(dim))
+	var dim = getdim(tensor);
+	if (dim.length === 0)
 		return fn(tensor);
 	else if (dim.length === 1) {
 		for (var i = 0; i < tensor.length; i++)
