@@ -55,7 +55,6 @@ function makeParamPredictor(opts) {
 				out[i] = out[i] + (A[i][j] * x[j]);
 			}
 		}
-		// console.log(out.map(ad_primal));
 		return out;
 	}
 
@@ -64,7 +63,11 @@ function makeParamPredictor(opts) {
 		return madd(A, x, b).map(activationFn);
 	}
 
+
+	var latentOrigin = numeric.rep([latentN], 0);
 	function getLatentState(treeRoot) {
+		if (treeRoot === undefined)
+			return latentOrigin;
 		var rnnParams = {
 			// Params for nn that lifts tree node features into the latent space
 			liftWeights: weightMatrix('liftWeights', [latentN, treeNodeDataDim]),
@@ -76,20 +79,23 @@ function makeParamPredictor(opts) {
 		};
 		return _getLatentState(treeRoot, rnnParams);
 	}
-	// TODO: Memoize
+	// Subtree computations are cached
+	var nodeIdCounter = 0;
+	function nextNodeId() { return nodeIdCounter++; }
+	function resetNodeIds() { nodeIdCounter = 0; }
+	var latentStateCache = {};
+	function clearLatentStateCache() { latentStateCache = {}; }
 	function _getLatentState(node, rnnParams) {
-		var features = getNormalizedTreeNodeFeatures(node);
-		// If there are no features (b/c the tree is empty), then use a zero vector.
-		// Otherwise, lift features into the latent space.
-		var latentState;
-		if (features === undefined) {
-			latentState = numeric.rep([latentN], 0);
-		} else {
-			latentState = nn(rnnParams.liftWeights, features, rnnParams.liftBias);
-			// if (isNaN(ad_primal(latentState[0])))
-			// 	console.log(latentState[0]);
+		if (node.__RNN_ID === undefined) {
+			node.__RNN_ID = nextNodeId();
+			latentStateCache[node.__RNN_ID] = _getLatentStateImpl(node, rnnParams);
 		}
-		if (node === undefined || node.children.length === 0) {
+		return latentStateCache[node.__RNN_ID];
+	}
+	function _getLatentStateImpl(node, rnnParams) {
+		var features = getNormalizedTreeNodeFeatures(node);
+		var latentState = nn(rnnParams.liftWeights, features, rnnParams.liftBias);
+		if (node.children === undefined || node.children.length === 0) {
 			return latentState;
 		} else {
 			assert(node.children.length <= 2);	// Only support binary branching for now
@@ -127,6 +133,19 @@ function makeParamPredictor(opts) {
 			nnutils.collectSample('treeNodeFeatures', features, normCache);
 		},
 
+		registerNewTreeNode: function(node) {
+			// Follow parent pointers back to the root and remove all ids
+			while(node) {
+				node.__RNN_ID = undefined;
+				node = node.parent;
+			}
+		},
+
+		prepareForRun: function() {
+			resetNodeIds();
+			clearLatentStateCache();
+		},
+
 		predict: function(name, bounds, currState, treeRoot) {
 			var currLatentState = getLatentState(treeRoot);
 			var predictWeights = weightMatrix('predictWeights_'+name, [bounds.length, stateVecDim + latentN]);
@@ -135,9 +154,6 @@ function makeParamPredictor(opts) {
 			var params = madd(predictWeights, stateFeatures.concat(currLatentState), predictBias);
 			for (var i = 0; i < params.length; i++)
 				params[i] = bounds[i].fwd(params[i]);
-			// if (isNaN(ad_primal(params[0]))) {
-			// 	console.log(currLatentState[0]);
-			// }
 			return params;
 		}
 	};

@@ -84,16 +84,18 @@ var makeProgram = function(opts) {
 			width: width,
 			end: currState.pos.clone().add(polar2rect(length, newang))
 		};
-		var newNode = { branch: newbranch, children: [] };
+		var newNode = { branch: newbranch, parent: treeNode };
 		if (treeNode === undefined) {
 			globals.treeRoot = newNode;
 		} else {
 			treeNode.children.push(newNode);
+			if (family === 'neural') paramPredictor.registerNewTreeNode(newNode);
 		}
 		globals.branches.push(newbranch);
 		collectInfo(currState, newNode);
 		// Terminate?
 		if (_flip(Math.exp(-0.045*currState.depth))) {
+			newNode.children = [];
 			// Continue or fork?
 			if (_flip(0.5)) {
 				branch({
@@ -117,6 +119,7 @@ var makeProgram = function(opts) {
 	};
 
 	var generate = function(params) {
+		if (family === 'neural') paramPredictor.prepareForRun();
 		globals.params = params;
 		globals.treeRoot = undefined;
 		globals.branches = [];
@@ -145,7 +148,7 @@ var makeProgram = function(opts) {
 	};
 
 	// If using the neural family, run generate until the param predictor has learned how
-	//    to normalize the state and tree node data
+	//    to normalize the state and tree node features
 	if (family === 'neural') {
 		do {
 			generate();
@@ -180,7 +183,6 @@ var result = variational.infer(target, guide, undefined, {
 	nSteps: 200,
 	convergeEps: 0.1,
 	initLearnrate: 1,
-
 	// tempSchedule: lutils.TempSchedules.linearStop(0.5)
 	// tempSchedule: lutils.TempSchedules.asymptotic(10)
 });
