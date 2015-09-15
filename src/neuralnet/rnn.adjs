@@ -64,7 +64,7 @@ function makeParamPredictor(opts) {
 	}
 
 
-	// TODO: Memoize (for faster forward pass)
+	// TODO: Memoize
 	function getLatentState(treeRoot) {
 		var rnnParams = {
 			// Params for nn that lifts tree node features into the latent space
@@ -79,28 +79,32 @@ function makeParamPredictor(opts) {
 	}
 	function _getLatentState(node, rnnParams) {
 		var features = getNormalizedTreeNodeFeatures(node);
-		// If there is no features (b/c the tree is empty), then use a zero vector.
+		// If there are no features (b/c the tree is empty), then use a zero vector.
 		// Otherwise, lift features into the latent space.
 		var latentState;
-		if (features === undefined)
+		if (features === undefined) {
 			latentState = numeric.rep([latentN], 0);
-		else
-			latentState = nn(rnnParams.liftWeights, features, rnnParams.liftBias);
-		if (node.children === undefined || node.children.length === 0)
-			return latentState;
-		assert(node.children.length <= 2);	// Only support binary branching for now
-		var childrenLatentState;
-		if (node.children.length === 1) {
-			childrenLatentState = _getLatentState(node.children[0], rnnParams);
 		} else {
-			childrenLatentState = nn(
-				rnnParams.mergeWeights,
-				_getLatentState(node.children[0], rnnParams).concat(_getLatentState(node.children[1], rnnParams)),
-				rnnParams.mergeBias
-			);
+			latentState = nn(rnnParams.liftWeights, features, rnnParams.liftBias);
 		}
-		// TODO: Separate params for incorporating lifted node features into merged children?
-		return nn(rnnParams.mergeWeights, childrenLatentState.concat(latentState), rnnParams.mergeBias);
+		if (node.children === undefined || node.children.length === 0) {
+			return latentState;
+		} else {
+			assert(node.children.length <= 2);	// Only support binary branching for now
+			var childrenLatentState;
+			if (node.children.length === 1) {
+				childrenLatentState = _getLatentState(node.children[0], rnnParams);
+			} else {
+				childrenLatentState = nn(
+					rnnParams.mergeWeights,
+					_getLatentState(node.children[0], rnnParams).concat(_getLatentState(node.children[1], rnnParams)),
+					rnnParams.mergeBias
+				);
+			}
+			// TODO: Separate params for incorporating lifted node features into merged children?
+			var x = nn(rnnParams.mergeWeights, childrenLatentState.concat(latentState), rnnParams.mergeBias);
+			return x;
+		}
 	}
 
 

@@ -35,7 +35,6 @@ function map(tensor, fn) {
 	else if (dim.length === 1)
 		return tensor.map(fn);
 	else {
-		console.log(tensor, dim);
 		return numeric._foreach2(tensor, dim, 0, function(x) { return x.map(fn); });
 	}
 }
