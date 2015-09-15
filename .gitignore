@@ -1,6 +1,7 @@
 node_modules
 erp_scorers.js
 boundsTransforms.js
+rnn.js
 experiments/adTest/*.csv
 experiments/convergence/*.csv
 compiledoutput.js

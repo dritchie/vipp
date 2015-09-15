@@ -124,12 +124,28 @@ var TempSchedules = {
 };
 
 
+var FeatureExtractors = {
+	state: function(currState) {
+		return [currState.depth, currState.pos.x, currState.pos.y,
+				currState.angle, currState.width];
+	},
+	treeNode: function(treeNode) {
+		if (treeNode.branch === undefined)
+			return undefined;
+		return [treeNode.branch.start.x, treeNode.branch.start.y,
+				treeNode.branch.angle, treeNode.branch.width,
+				treeNode.branch.end.x, treeNode.branch.end.y];
+	}
+}
+
+
 module.exports = {
 	render: render,
 	renderOut: renderOut,
 	newImageData2D: function(canvas) { return new ImageData2D(canvas); },
 	newCanvas: function(w, h) { return new Canvas(w, h); },
 	TempSchedules: TempSchedules,
+	FeatureExtractors: FeatureExtractors,
 	require: require	// so that webppl code can just require whatever code it wants
 };
 

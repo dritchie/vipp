@@ -3,32 +3,7 @@ var lutils = require('lsystem/utils');
 var THREE = require('three');
 var bounds = require('src/boundsTransforms');
 var nodeutil = require('util');
-
-
-var mapIndexed = function(f, l) {
-  var fn = function(ls, i, _acc) {
-    return ls.length === 0 ?
-        _acc :
-        fn(ls.slice(1), i + 1, _acc.concat([f(i, ls[0])]))
-  };
-  return fn(l, 0, []);
-}
-
-var polar2rect = function(r, theta) {
-	return new THREE.Vector2(r*Math.cos(theta), r*Math.sin(theta));
-};
-
-
-
-
-var mkbranch = function(start, angle, width, length) {
-	return {
-		start: start,
-		angle: angle,
-		width: width,
-		end: start.clone().add(polar2rect(length, angle))
-	};
-};
+var _ = require('underscore');
 
 
 
@@ -39,6 +14,8 @@ var loresH = 100;
 var canvas = lutils.newCanvas(loresW, loresH);
 var viewport = {xmin: -20, xmax: 20, ymin: -38, ymax: 2};
 
+
+
 var makeProgram = function(opts) {
 
 	var family = opts.family;
@@ -48,31 +25,40 @@ var makeProgram = function(opts) {
 	var prm = function(v, t, s, h) { return param(globals.params, v, t, s, h); };
 
 	var getParams;
-	if (family === 'target')
+	// Neural starts out doing the same thing as target (while it's learning how to
+	//    normalize the state and tree node data)
+	if (family === 'target' || family === 'neural') {
 		getParams = function(params) { return params; };
-	else if (family === 'meanField') {
+	} else if (family === 'meanField') {
 		getParams = function(params, bounds) {
-			return mapIndexed(function(i, p) { return prm(params[i], bounds[i]); }, params);
+			var address = arguments[0];
+			var addrParts = address.split();
+			var callsite = '_' + addrParts[addrParts.length-2];
+			var prms = [];
+			for (var i = 0; i < params.length; i++)
+				prms.push(utils.runWithAddress(prm, callsite+'['+i+']', [params[i], bounds[i]]));
+			return prms;
 		};
 	}
 
+	var collectInfo = function() {};
+	if (family === 'neural') {
+		var rnn = require('src/neuralnet/rnn');
+		var rnnopts = _.extend(_.clone(opts), {globals: globals});
+		var paramPredictor = rnn.makeParamPredictor(rnnopts);
+		collectInfo = function(currState, treeNode) {
+			paramPredictor.collectStateSample(currState);
+			paramPredictor.collectTreeNodeSample(treeNode);
+		}
+	}
+
 	var _gaussian = function(mu, sigma) {
-		var address = arguments[0];
-		var addrParts = address.split('_');
-		var callsite = '_' + addrParts[addrParts.length-1];
-		// var params = getParams([mu, sigma], [undefined, bounds.nonNegative]);
-		var params = utils.runWithAddress(getParams, callsite, [[mu, sigma], [undefined, bounds.nonNegative]]);
+		var params = getParams([mu, sigma], [bounds.none, bounds.nonNegative], globals.currState);
 		return gaussian(params[0], params[1]);
 	};
 
+	// TODO: Also parameterize flips?
 	var _flip = function(p) {
-		// p = Math.min(Math.max(0.001, p), 0.999);  // Can't be exactly 0 or exactly 1
-		// var address = arguments[0];
-		// var addrParts = address.split('_');
-		// var callsite = '_' + addrParts[addrParts.length-1];
-		// // var params = getParams([p], [bounds.unitInterval]);
-		// var params = utils.runWithAddress(getParams, callsite, [[p], [bounds.unitInterval]]);
-		// return flip(params[0]);
 		return flip(p);
 	}
 
@@ -83,13 +69,28 @@ var makeProgram = function(opts) {
 
 	// ------------------------------------------------------------------------
 
-	var branch = function(currState, treeRoot, treeNode, branches) {
+	var polar2rect = function(r, theta) {
+		return new THREE.Vector2(r*Math.cos(theta), r*Math.sin(theta));
+	};
+
+	var mkbranch = function(start, angle, width, length) {
+		return {
+			start: start,
+			angle: angle,
+			width: width,
+			end: start.clone().add(polar2rect(length, angle))
+		};
+	};
+
+	var branch = function(currState, treeNode) {
+		globals.currState = currState;
 		var width = 0.9 * currState.width;
 		var length = 2;
 		var newang = currState.angle + _gaussian(0, Math.PI/8);
 		var newbranch = mkbranch(currState.pos, newang, width, length);
 		treeNode.branch = newbranch;
-		branches.push(newbranch);
+		globals.branches.push(newbranch);
+		collectInfo(currState, treeNode);
 		// Terminate?
 		if (_flip(Math.exp(-0.045*currState.depth))) {
 			// Continue or fork?
@@ -101,7 +102,7 @@ var makeProgram = function(opts) {
 					pos: newbranch.end,
 					angle: newbranch.angle,
 					width: newbranch.width},
-				treeRoot, newNode, branches);
+				newNode);
 			} else {
 				var branchState = {
 					depth: currState.depth + 1,
@@ -110,29 +111,29 @@ var makeProgram = function(opts) {
 					width: newbranch.width
 				};
 				treeNode.children = [{}, {}];
-				branch(branchState, treeRoot, treeNode.children[0], branches);
+				branch(branchState, treeNode.children[0]);
 				branchState.angle = newbranch.angle + Math.abs(_gaussian(0, Math.PI/6));
-				branch(branchState, treeRoot, treeNode.children[1], branches);
+				branch(branchState, treeNode.children[1]);
 			}
 		}
 	};
 
 	var generate = function(params) {
 		globals.params = params;
-		var treeRoot = {};
-		var branches = [];
+		globals.treeRoot = {};
+		globals.branches = [];
 		var startState = {
 			depth: 0,
 			pos: new THREE.Vector2(0, 0),
 			angle: -Math.PI/2,
 			width: 0.75
 		}
-		branch(startState, treeRoot, treeRoot, branches);
+		branch(startState, globals.treeRoot);
 
 		factorFunc(function() {
 			var f = 0;
 
-			lutils.render(canvas, viewport, branches);
+			lutils.render(canvas, viewport, globals.branches);
 			var img2d = lutils.newImageData2D(canvas);
 
 			// Horizonal bilateral symmetry
@@ -142,15 +143,38 @@ var makeProgram = function(opts) {
 			return f;
 		});
 
-		return branches;
+		return globals.branches;
 	};
+
+	// If using the neural family, run generate until the param predictor has learned how
+	//    to normalize the state and tree node data
+	if (family === 'neural') {
+		do {
+			generate();
+		}
+		while (!paramPredictor.readyToPredict())
+		// Now, replace 'getParams' with the neural net version
+		getParams = function(params, bounds, currState) {
+			var address = arguments[0];
+			var addrParts = address.split();
+			var callsite = '_' + addrParts[addrParts.length-2];
+			return paramPredictor.predict(callsite, bounds, currState, globals.treeRoot);
+		};
+		collectInfo = function() {};
+	}
 
 	return generate;
 };
 
 
 var target = makeProgram({family: 'target'});
-var guide =  makeProgram({family: 'meanField'});
+// var guide =  makeProgram({family: 'meanField'});
+var guide = makeProgram({family: 'neural',
+	stateFeatures: lutils.FeatureExtractors.state,
+	treeNodeFeatures: lutils.FeatureExtractors.treeNode,
+	latentN: 100,
+	nNormalizeSamples: 1000
+})
 
 var result = variational.infer(target, guide, undefined, {
 	verbosity: 3,

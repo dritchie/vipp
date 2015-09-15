@@ -737,7 +737,8 @@ module.exports = {
 	},
 	sample: sample,
 	factor: factor,
-	param: param
+	param: param,
+	paramTensor: paramTensor
 };
 
 

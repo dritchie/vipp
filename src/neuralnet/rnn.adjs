@@ -6,11 +6,11 @@ var numeric = require('numeric');
 
 
 // 'globals' contains the params object
-// 'treeNodeDataFn' extracts a state vector from a tree node
 function makeParamPredictor(opts) {
 
 	var globals = opts.globals;
-	var treeNodeDataFn = opts.treeNodeDataFn;
+	var stateFeatures = opts.stateFeatures;
+	var treeNodeFeatures = opts.treeNodeFeatures;
 	var latentN = opts.latentN;
 	var nNormalizeSamples = opts.nNormalizeSamples;
 
@@ -25,11 +25,14 @@ function makeParamPredictor(opts) {
 
 
 	var normCache = nnutils.makeInputSampleCache(nNormalizeSamples);
-	function normalizeStateVec(stateVec) {
-		return nnutils.normalizeInputs('stateVec', stateVec, normCache);
+	function getNormalizedStateFeatures(state) {
+		return nnutils.normalizeInputs('stateFeatures', stateFeatures(state), normCache);
 	}
-	function normalizeTreeNodeData(node) {
-		return nnutils.normalizeInputs('treeNode', treeNodeDataFn(node), normCache);
+	function getNormalizedTreeNodeFeatures(node) {
+		var features = treeNodeFeatures(node);
+		if (features === undefined)
+			return undefined;
+		return nnutils.normalizeInputs('treeNodeFeatures', features, normCache);
 	}
 
 
@@ -64,27 +67,25 @@ function makeParamPredictor(opts) {
 	// TODO: Memoize (for faster forward pass)
 	function getLatentState(treeRoot) {
 		var rnnParams = {
-			// Params for nn that lifts tree node data into the latent space
+			// Params for nn that lifts tree node features into the latent space
 			liftWeights: weightMatrix('liftWeights', [latentN, treeNodeDataDim]),
 			liftBias: biasVector('liftBias', latentN),
 			// Params for nn that merges two child latent states into one
 			mergeWeights: weightMatrix('mergeWeights', [latentN, 2*latentN]),
 			mergeBias: biasVector('mergeBias', latentN)
-			// TODO: Separate params for incorporating lifted node data into merged children?
+			// TODO: Separate params for incorporating lifted node features into merged children?
 		};
 		return _getLatentState(treeRoot, rnnParams);
 	}
 	function _getLatentState(node, rnnParams) {
-		var data = treeNodeDataFn(node);
-		////
-		// If there is no data (b/c the tree is empty), then use a zero vector.
-		// Otherwise, normalize the data and map into the latent space.
+		var features = getNormalizedTreeNodeFeatures(node);
+		// If there is no features (b/c the tree is empty), then use a zero vector.
+		// Otherwise, lift features into the latent space.
 		var latentState;
-		if (data === undefined)
+		if (features === undefined)
 			latentState = numeric.rep([latentN], 0);
 		else
-			latentState = nn(rnnParams.liftWeights, normalizeTreeNodeData(data), rnnParams.liftBias);
-		////
+			latentState = nn(rnnParams.liftWeights, features, rnnParams.liftBias);
 		if (node.children === undefined || node.children.length === 0)
 			return latentState;
 		assert(node.children.length <= 2);	// Only support binary branching for now
@@ -93,13 +94,13 @@ function makeParamPredictor(opts) {
 			childrenLatentState = _getLatentState(node.children[0], rnnParams);
 		} else {
 			childrenLatentState = nn(
-				mergeWeights,
+				rnnParams.mergeWeights,
 				_getLatentState(node.children[0], rnnParams).concat(_getLatentState(node.children[1], rnnParams)),
-				mergeBias
+				rnnParams.mergeBias
 			);
 		}
-		// TODO: Separate params for incorporating lifted node data into merged children?
-		return nn(mergeWeights, childrenLatentState.concat(latentState), mergeBias);
+		// TODO: Separate params for incorporating lifted node features into merged children?
+		return nn(rnnParams.mergeWeights, childrenLatentState.concat(latentState), rnnParams.mergeBias);
 	}
 
 
@@ -108,25 +109,26 @@ function makeParamPredictor(opts) {
 			return normCache.hasEnoughSamples();
 		},
 
-		collectStateSample: function(stateVec) {
-			stateVecDim = stateVec.length;
-			nnutils.collectSample('stateVec', stateVec, normCache);
+		collectStateSample: function(state) {
+			var features = stateFeatures(state);
+			stateVecDim = features.length;
+			nnutils.collectSample('stateFeatures', features, normCache);
 		},
 
 		collectTreeNodeSample: function(node) {
-			var data = treeNodeDataFn(node);
-			treeNodeDataDim = data.length;
-			nnutils.collectSample('treeNode', data, normCache);
+			var features = treeNodeFeatures(node);
+			treeNodeDataDim = features.length;
+			nnutils.collectSample('treeNodeFeatures', features, normCache);
 		},
 
-		predict: function(name, outTransforms, currStateVec, treeRoot) {
+		predict: function(name, bounds, currState, treeRoot) {
 			var currLatentState = getLatentState(treeRoot);
-			var predictWeights = weightMatrix('predictWeights_'+name, [outTransforms.length stateVecDim + latentN]);
-			var predictBias = biasVector('predictBias_'+name, outTransforms.length);
-			var normStateVec = normalizeStateVec(currStateVec);
-			var params = madd(predictWeights, normStateVec.concat(currLatentState), predictBias);
+			var predictWeights = weightMatrix('predictWeights_'+name, [bounds.length, stateVecDim + latentN]);
+			var predictBias = biasVector('predictBias_'+name, bounds.length);
+			var stateFeatures = getNormalizedStateFeatures(currState);
+			var params = madd(predictWeights, stateFeatures.concat(currLatentState), predictBias);
 			for (var i = 0; i < params.length; i++)
-				params[i] = outTransforms[i](params[i]);
+				params[i] = bounds[i].fwd(params[i]);
 			return params;
 		}
 	};
