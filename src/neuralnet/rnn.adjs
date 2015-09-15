@@ -36,7 +36,7 @@ function makeParamPredictor(opts) {
 	}
 
 
-	var HYPERS = [0, 1];
+	var HYPERS = [0, 0.1];
 	function weightMatrix(name, dims) {
 		return paramTensor(name, globals.params, dims, undefined, gaussianERP.sample, HYPERS);
 	}
@@ -55,6 +55,7 @@ function makeParamPredictor(opts) {
 				out[i] = out[i] + (A[i][j] * x[j]);
 			}
 		}
+		// console.log(out.map(ad_primal));
 		return out;
 	}
 
@@ -63,8 +64,6 @@ function makeParamPredictor(opts) {
 		return madd(A, x, b).map(activationFn);
 	}
 
-
-	// TODO: Memoize
 	function getLatentState(treeRoot) {
 		var rnnParams = {
 			// Params for nn that lifts tree node features into the latent space
@@ -77,6 +76,7 @@ function makeParamPredictor(opts) {
 		};
 		return _getLatentState(treeRoot, rnnParams);
 	}
+	// TODO: Memoize
 	function _getLatentState(node, rnnParams) {
 		var features = getNormalizedTreeNodeFeatures(node);
 		// If there are no features (b/c the tree is empty), then use a zero vector.
@@ -86,8 +86,10 @@ function makeParamPredictor(opts) {
 			latentState = numeric.rep([latentN], 0);
 		} else {
 			latentState = nn(rnnParams.liftWeights, features, rnnParams.liftBias);
+			// if (isNaN(ad_primal(latentState[0])))
+			// 	console.log(latentState[0]);
 		}
-		if (node.children === undefined || node.children.length === 0) {
+		if (node === undefined || node.children.length === 0) {
 			return latentState;
 		} else {
 			assert(node.children.length <= 2);	// Only support binary branching for now
@@ -133,6 +135,9 @@ function makeParamPredictor(opts) {
 			var params = madd(predictWeights, stateFeatures.concat(currLatentState), predictBias);
 			for (var i = 0; i < params.length; i++)
 				params[i] = bounds[i].fwd(params[i]);
+			// if (isNaN(ad_primal(params[0]))) {
+			// 	console.log(currLatentState[0]);
+			// }
 			return params;
 		}
 	};

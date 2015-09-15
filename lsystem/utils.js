@@ -130,7 +130,7 @@ var FeatureExtractors = {
 				currState.angle, currState.width];
 	},
 	treeNode: function(treeNode) {
-		if (treeNode.branch === undefined)
+		if (treeNode === undefined)
 			return undefined;
 		return [treeNode.branch.start.x, treeNode.branch.start.y,
 				treeNode.branch.angle, treeNode.branch.width,

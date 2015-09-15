@@ -73,30 +73,29 @@ var makeProgram = function(opts) {
 		return new THREE.Vector2(r*Math.cos(theta), r*Math.sin(theta));
 	};
 
-	var mkbranch = function(start, angle, width, length) {
-		return {
-			start: start,
-			angle: angle,
-			width: width,
-			end: start.clone().add(polar2rect(length, angle))
-		};
-	};
-
 	var branch = function(currState, treeNode) {
 		globals.currState = currState;
 		var width = 0.9 * currState.width;
 		var length = 2;
 		var newang = currState.angle + _gaussian(0, Math.PI/8);
-		var newbranch = mkbranch(currState.pos, newang, width, length);
-		treeNode.branch = newbranch;
+		var newbranch = {
+			start: currState.pos,
+			angle: newang,
+			width: width,
+			end: currState.pos.clone().add(polar2rect(length, newang))
+		};
+		var newNode = { branch: newbranch, children: [] };
+		if (treeNode === undefined) {
+			globals.treeRoot = newNode;
+		} else {
+			treeNode.children.push(newNode);
+		}
 		globals.branches.push(newbranch);
-		collectInfo(currState, treeNode);
+		collectInfo(currState, newNode);
 		// Terminate?
 		if (_flip(Math.exp(-0.045*currState.depth))) {
 			// Continue or fork?
 			if (_flip(0.5)) {
-				var newNode = {};
-				treeNode.children = [newNode];
 				branch({
 					depth: currState.depth + 1,
 					pos: newbranch.end,
@@ -110,17 +109,16 @@ var makeProgram = function(opts) {
 					angle: newbranch.angle - Math.abs(_gaussian(0, Math.PI/6)),
 					width: newbranch.width
 				};
-				treeNode.children = [{}, {}];
-				branch(branchState, treeNode.children[0]);
+				branch(branchState, newNode);
 				branchState.angle = newbranch.angle + Math.abs(_gaussian(0, Math.PI/6));
-				branch(branchState, treeNode.children[1]);
+				branch(branchState, newNode);
 			}
 		}
 	};
 
 	var generate = function(params) {
 		globals.params = params;
-		globals.treeRoot = {};
+		globals.treeRoot = undefined;
 		globals.branches = [];
 		var startState = {
 			depth: 0,
@@ -128,7 +126,7 @@ var makeProgram = function(opts) {
 			angle: -Math.PI/2,
 			width: 0.75
 		}
-		branch(startState, globals.treeRoot);
+		branch(startState, undefined);
 
 		factorFunc(function() {
 			var f = 0;
@@ -172,12 +170,12 @@ var target = makeProgram({family: 'target'});
 var guide = makeProgram({family: 'neural',
 	stateFeatures: lutils.FeatureExtractors.state,
 	treeNodeFeatures: lutils.FeatureExtractors.treeNode,
-	latentN: 100,
+	latentN: 10,
 	nNormalizeSamples: 1000
 })
 
 var result = variational.infer(target, guide, undefined, {
-	verbosity: 3,
+	verbosity: 4,
 	nSamples: 100,
 	nSteps: 200,
 	convergeEps: 0.1,
