@@ -22,6 +22,7 @@ function makeParamPredictor(opts) {
 
 	// Can't be passed in via opts b/c it needs to be AD'ed.
 	var activationFn = function(x) { return 1.7159 * Math.tanh(2/3 * x); };
+	// var activationFn = function(x) { return 1 / (1 + Math.exp(-x)); };
 
 
 	var normCache = nnutils.makeInputSampleCache(nNormalizeSamples);

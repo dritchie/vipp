@@ -157,7 +157,7 @@ var makeProgram = function(opts) {
 		// Now, replace 'getParams' with the neural net version
 		getParams = function(params, bounds, currState) {
 			var address = arguments[0];
-			var addrParts = address.split();
+			var addrParts = address.split('_');
 			var callsite = '_' + addrParts[addrParts.length-2];
 			return paramPredictor.predict(callsite, bounds, currState, globals.treeRoot);
 		};
@@ -183,6 +183,7 @@ var result = variational.infer(target, guide, undefined, {
 	nSteps: 200,
 	convergeEps: 0.1,
 	initLearnrate: 1,
+	allowZeroDerivatives: true,
 	// tempSchedule: lutils.TempSchedules.linearStop(0.5)
 	// tempSchedule: lutils.TempSchedules.asymptotic(10)
 });
