@@ -13,7 +13,7 @@ MAINFILE = src/main.js
 
 all: $(ADFILES_TRANSFORMED)
 
-src/%.js: src/%.adjs $(MACROS) $(TRANSFORM) $(TRANSFORMLIB)
+%.js: %.adjs $(MACROS) $(TRANSFORM) $(TRANSFORMLIB)
 	$(TRANSFORM) $< > $@
 
 browser: $(MINIFIED)

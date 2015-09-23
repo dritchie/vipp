@@ -1,5 +1,6 @@
 var utils = require('src/util');
 var lutils = require('lsystem/utils');
+var lparams = require('lsystem/params');
 var THREE = require('three');
 var bounds = require('src/boundsTransforms');
 var nodeutil = require('util');
@@ -12,7 +13,8 @@ var _ = require('underscore');
 var loresW = 100;
 var loresH = 100;
 var canvas = lutils.newCanvas(loresW, loresH);
-var viewport = {xmin: -20, xmax: 20, ymin: -38, ymax: 2};
+// var viewport = {xmin: -20, xmax: 20, ymin: -38, ymax: 2};
+var viewport = {xmin: -12, xmax: 12, ymin: -22, ymax: 2};
 
 
 
@@ -32,7 +34,7 @@ var makeProgram = function(opts) {
 	} else if (family === 'meanField') {
 		getParams = function(params, bounds) {
 			var address = arguments[0];
-			var addrParts = address.split();
+			var addrParts = address.split('_');
 			var callsite = '_' + addrParts[addrParts.length-2];
 			var prms = [];
 			for (var i = 0; i < params.length; i++)
@@ -57,6 +59,12 @@ var makeProgram = function(opts) {
 		return gaussian(params[0], params[1]);
 	};
 
+	var _uniform = function(lo, hi) {
+		var params = getParams([1, 1], [bounds.nonNegative, bounds.nonNegative], globals.currState);
+		var t = beta(params[0], params[1]);
+		return (1-t)*lo + t*hi;
+	}
+
 	// TODO: Also parameterize flips?
 	var _flip = function(p) {
 		return flip(p);
@@ -73,11 +81,26 @@ var makeProgram = function(opts) {
 		return new THREE.Vector2(r*Math.cos(theta), r*Math.sin(theta));
 	};
 
+	var normalize = function(x, lo, hi) {
+	return (2 * (x - lo) / (hi - lo)) - 1;
+	}
+	var setSizeFeatures = function(currPos) {
+		var bb = globals.bbox;
+		var x = normalize(currPos.x, viewport.xmin, viewport.xmax);
+		var y = normalize(currPos.y, viewport.ymin, viewport.ymax);
+		var xmin = normalize(bb.min.x, viewport.xmin, viewport.xmax);
+		var xmax = normalize(bb.max.x, viewport.xmin, viewport.xmax);
+		var ymin = normalize(bb.min.y, viewport.ymin, viewport.ymax);
+		var ymax = normalize(bb.max.y, viewport.ymin, viewport.ymax);
+		globals.currSizeFeatures = [x, y, xmin, xmax, ymin, ymax];
+	}
+
 	var branch = function(currState, treeNode) {
 		globals.currState = currState;
 		var width = 0.9 * currState.width;
 		var length = 2;
-		var newang = currState.angle + _gaussian(0, Math.PI/8);
+		// var newang = currState.angle + _gaussian(0, Math.PI/8);
+		var newang = currState.angle + _uniform(-Math.PI/6, Math.PI/6);
 		var newbranch = {
 			start: currState.pos,
 			angle: newang,
@@ -93,8 +116,13 @@ var makeProgram = function(opts) {
 		}
 		globals.branches.push(newbranch);
 		collectInfo(currState, newNode);
+		globals.bbox = globals.bbox.clone();
+		globals.bbox.expandByPoint(newbranch.start);
+		globals.bbox.expandByPoint(newbranch.end);
+		setSizeFeatures(newbranch.end);
 		// Terminate?
-		if (_flip(Math.exp(-0.045*currState.depth))) {
+		// if (_flip(Math.exp(-0.045*currState.depth))) {
+		if (currState.depth < 5) {
 			newNode.children = [];
 			// Continue or fork?
 			if (_flip(0.5)) {
@@ -108,11 +136,13 @@ var makeProgram = function(opts) {
 				var branchState = {
 					depth: currState.depth + 1,
 					pos: newbranch.end,
-					angle: newbranch.angle - Math.abs(_gaussian(0, Math.PI/6)),
+					// angle: newbranch.angle - Math.abs(_gaussian(0, Math.PI/6)),
+					angle: newbranch.angle - _uniform(0, Math.PI/4),
 					width: newbranch.width
 				};
 				branch(branchState, newNode);
-				branchState.angle = newbranch.angle + Math.abs(_gaussian(0, Math.PI/6));
+				// branchState.angle = newbranch.angle + Math.abs(_gaussian(0, Math.PI/6));
+				branchState.angle = newbranch.angle + _uniform(0, Math.PI/4);
 				branch(branchState, newNode);
 			}
 		}
@@ -123,6 +153,8 @@ var makeProgram = function(opts) {
 		globals.params = params;
 		globals.treeRoot = undefined;
 		globals.branches = [];
+		globals.bbox = new THREE.Box2();
+		globals.currSizeFeatures = [];
 		var startState = {
 			depth: 0,
 			pos: new THREE.Vector2(0, 0),
@@ -134,12 +166,21 @@ var makeProgram = function(opts) {
 		factorFunc(function() {
 			var f = 0;
 
+			// Horizonal bilateral symmetry
 			lutils.render(canvas, viewport, globals.branches);
 			var img2d = lutils.newImageData2D(canvas);
-
-			// Horizonal bilateral symmetry
 			var sym = img2d.filledBilateralSymmetryHoriz();
 			f += gaussianERP.score([1, 0.01], sym);
+
+			// // Basic size properties
+			// var bbox = globals.bbox;
+			// var size = bbox.size();
+			// var targetWidth = 8;
+			// var targetYmax = 0;
+			// var targetXcenter = 0;
+			// f += gaussianERP.score([targetWidth, 0.1], size.x);
+			// f += gaussianERP.score([targetYmax, 0.1], bbox.max.y);
+			// f += gaussianERP.score([targetXcenter, 0.1], bbox.center().x);
 
 			return f;
 		});
@@ -159,7 +200,8 @@ var makeProgram = function(opts) {
 			var address = arguments[0];
 			var addrParts = address.split('_');
 			var callsite = '_' + addrParts[addrParts.length-2];
-			return paramPredictor.predict(callsite, bounds, currState, globals.treeRoot);
+			return paramPredictor.predict(callsite, params, bounds, currState, globals.treeRoot);
+			// return lparams.paramsByLinReg(globals.params, callsite, params, bounds, globals.currSizeFeatures);
 		};
 		collectInfo = function() {};
 	}
@@ -168,63 +210,68 @@ var makeProgram = function(opts) {
 };
 
 
-var target = makeProgram({family: 'target'});
-// var guide =  makeProgram({family: 'meanField'});
-var guide = makeProgram({family: 'neural',
-	stateFeatures: lutils.FeatureExtractors.state,
-	treeNodeFeatures: lutils.FeatureExtractors.treeNode,
-	latentN: 10,
-	nNormalizeSamples: 1000
-})
+var variationalTest = function() {
+	var target = makeProgram({family: 'target'});
+	// var guide =  makeProgram({family: 'meanField'});
+	var guide = makeProgram({family: 'neural',
+		stateFeatures: lutils.FeatureExtractors.state,
+		treeNodeFeatures: lutils.FeatureExtractors.treeNode,
+		latentN: 10,
+		nNormalizeSamples: 1000
+	});
 
-var result = variational.infer(target, guide, undefined, {
-	verbosity: 4,
-	nSamples: 100,
-	nSteps: 200,
-	convergeEps: 0.1,
-	initLearnrate: 1,
-	allowZeroDerivatives: true,
-	// tempSchedule: lutils.TempSchedules.linearStop(0.5)
-	// tempSchedule: lutils.TempSchedules.asymptotic(10)
-});
+	var result = variational.infer(target, guide, undefined, {
+		verbosity: 3,
+		nSamples: 100,
+		nSteps: 800,
+		convergeEps: 0.1,
+		initLearnrate: 1,
+		allowZeroDerivatives: true,
+		tempSchedule: lutils.TempSchedules.linearStop(0.5),
+		regularizationWeight: 100
+	});
 
-var outname = 'test';
-var fs = require('fs');
-var cp = require('child_process');
-var dirname = 'lsystem/results/' + outname;
-if (fs.existsSync(dirname))
-	cp.execSync('rm -rf ' + dirname);
-fs.mkdirSync(dirname);
-for (var i = 0; i < 20; i++) {
-	var branches = utils.runWithAddress(guide, '', [result.params]);
-	// var branches = utils.runWithAddress(target, '');
-	lutils.render(canvas, viewport, branches);
-	var img2d = lutils.newImageData2D(canvas);
-	var sym = img2d.filledBilateralSymmetryHoriz();
-	lutils.renderOut(nodeutil.format('%s/%d_%d.png', dirname, i, sym),
-		{width: 600, height: 600}, viewport, branches);
+	console.log(result.params.values);
+
+	var outname = 'test';
+	var fs = require('fs');
+	var cp = require('child_process');
+	var dirname = 'lsystem/results/' + outname;
+	if (fs.existsSync(dirname))
+		cp.execSync('rm -rf ' + dirname);
+	fs.mkdirSync(dirname);
+	for (var i = 0; i < 20; i++) {
+		var branches = utils.runWithAddress(guide, '', [result.params]);
+		// var branches = utils.runWithAddress(target, '');
+		lutils.render(canvas, viewport, branches);
+		var img2d = lutils.newImageData2D(canvas);
+		var sym = img2d.filledBilateralSymmetryHoriz();
+		lutils.renderOut(nodeutil.format('%s/%d_%d.png', dirname, i, sym),
+			{width: 600, height: 600}, viewport, branches);
+	}
 }
 
+var forwardTest = function() {
+	var generate = makeProgram({family: 'target'});
+	var branches = generate();
+	console.log(branches.length);
+	var bbox = new THREE.Box2();
+	for (var i = 0; i < branches.length; i++) {
+		var br = branches[i];
+		bbox.expandByPoint(br.start);
+		bbox.expandByPoint(br.end);
+	}
+	console.log(bbox);
+	lutils.renderOut(
+		'lsystem/results/lsystem.png',
+		{width: 600, height: 600},
+		viewport,
+		branches
+	);
+}
 
-// // TEST
-// var generate = makeProgram({family: 'target'});
-// var branches = generate();
-// console.log(branches.length);
-// var bbox = new THREE.Box2();
-// for (var i = 0; i < branches.length; i++) {
-// 	var br = branches[i];
-// 	bbox.expandByPoint(br.start);
-// 	bbox.expandByPoint(br.end);
-// }
-// console.log(bbox);
-// lutils.renderOut(
-// 	'lsystem/results/lsystem.png',
-// 	{width: 600, height: 600},
-// 	{xmin: -20, xmax: 20, ymin: -38, ymax: 2},
-// 	branches
-// );
-
-
+variationalTest();
+// forwardTest();
 
 
 

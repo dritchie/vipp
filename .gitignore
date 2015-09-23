@@ -1,8 +1,9 @@
 node_modules
 erp_scorers.js
-boundsTransforms.js
-rnn.js
+src/boundsTransforms.js
+src/neuralnet/rnn.js
 experiments/adTest/*.csv
 experiments/convergence/*.csv
 compiledoutput.js
 */results/*
+lsystem/params.js

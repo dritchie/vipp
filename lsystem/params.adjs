@@ -1,0 +1,28 @@
+
+var sampleprms = [0, 0.01];
+
+// Calculate parameters by a linear regression on input features
+// (plus non-linear bounding transforms)
+function paramsByLinReg(params, name, origprms, bounds, features) {
+	// If features has different dimensionality, we need separate params,
+	//    even if the name is the same.
+	name += '(' + features.length + ')';
+	var intercepts = paramTensor(name + '[icepts]', params, [bounds.length], undefined, gaussianERP.sample, sampleprms);
+	var output = intercepts.slice();
+	if (features.length > 0) {
+	 	var coeffs = paramTensor(name + '[coeffs]', params, [bounds.length, features.length], undefined, gaussianERP.sample, sampleprms);
+		for (var i = 0; i < bounds.length; i++) {
+			for (var j = 0; j < features.length; j++) {
+				output[i] = output[i] + (coeffs[i][j] * features[j]);
+			}
+		}
+	}
+	for (var i = 0; i < bounds.length; i++) {
+		output[i] = bounds[i].fwd(output[i] + bounds[i].rvs(origprms[i]));
+	}
+	return output;
+}
+
+module.exports = {
+	paramsByLinReg: paramsByLinReg
+}
