@@ -3,6 +3,7 @@ var nnutils = require('./utils');
 var assert = require('assert');
 var _ = require('underscore');
 var numeric = require('numeric');
+var tensor = require('../tensor');
 
 
 // 'globals' contains the params object
@@ -21,8 +22,8 @@ function makeParamPredictor(opts) {
 
 
 	// Can't be passed in via opts b/c it needs to be AD'ed.
-	var activationFn = function(x) { return 1.7159 * Math.tanh(2/3 * x); };
-	// var activationFn = function(x) { return 1 / (1 + Math.exp(-x)); };
+	// var activationFn = function(x) { return 1.7159 * Math.tanh(2/3 * x); };
+	var activationFn = function(x) { return (2 / (1 + Math.exp(-x))) - 1; };
 
 
 	var normCache = nnutils.makeInputSampleCache(nNormalizeSamples);
@@ -37,7 +38,7 @@ function makeParamPredictor(opts) {
 	}
 
 
-	var HYPERS = [0, 0.1];
+	var HYPERS = [0, 0.0001];
 	function weightMatrix(name, dims) {
 		return paramTensor(name, globals.params, dims, undefined, gaussianERP.sample, HYPERS);
 	}
@@ -96,9 +97,7 @@ function makeParamPredictor(opts) {
 	function _getLatentStateImpl(node, rnnParams) {
 		var features = getNormalizedTreeNodeFeatures(node);
 		var latentState = nn(rnnParams.liftWeights, features, rnnParams.liftBias);
-		if (node.children === undefined || node.children.length === 0) {
-			return latentState;
-		} else {
+		if (node.children !== undefined && node.children.length > 0) {
 			assert(node.children.length <= 2);	// Only support binary branching for now
 			var childrenLatentState;
 			if (node.children.length === 1) {
@@ -111,9 +110,15 @@ function makeParamPredictor(opts) {
 				);
 			}
 			// TODO: Separate params for incorporating lifted node features into merged children?
-			var x = nn(rnnParams.mergeWeights, childrenLatentState.concat(latentState), rnnParams.mergeBias);
-			return x;
+			latentState = nn(rnnParams.mergeWeights, childrenLatentState.concat(latentState), rnnParams.mergeBias);
 		}
+		// ////
+		// if (!tensor.all(latentState, function(x) { return isFinite(ad_primal(x)); })) {
+		// 	console.log(latentState.map(ad_primal));
+		// 	throw 'Non-finite latent state';
+		// }
+		// ////
+		return latentState;
 	}
 
 
@@ -147,15 +152,48 @@ function makeParamPredictor(opts) {
 			clearLatentStateCache();
 		},
 
-		predict: function(name, bounds, currState, treeRoot) {
+		predict: function(name, origParams, bounds, currState, treeRoot) {
+
 			var currLatentState = getLatentState(treeRoot);
 			var predictWeights = weightMatrix('predictWeights_'+name, [bounds.length, stateVecDim + latentN]);
 			var predictBias = biasVector('predictBias_'+name, bounds.length);
 			var stateFeatures = getNormalizedStateFeatures(currState);
 			var params = madd(predictWeights, stateFeatures.concat(currLatentState), predictBias);
-			for (var i = 0; i < params.length; i++)
-				params[i] = bounds[i].fwd(params[i]);
-			return params;
+
+			// var predictWeights = weightMatrix('predictWeights_'+name, [bounds.length, stateVecDim]);
+			// var predictBias = biasVector('predictBias_'+name, bounds.length);
+			// var stateFeatures = getNormalizedStateFeatures(currState);
+			// var params = madd(predictWeights, stateFeatures, predictBias);
+
+			// var params = biasVector('predictBias_'+name, bounds.length);
+
+			var boundedParams = numeric.rep([params.length], 0);
+			for (var i = 0; i < params.length; i++) {
+				// The neural nets are set up so that when all the weights are zero, the output is zero.
+				// With this in mind, we try to make params close to their original (i.e. as written in
+				//    the program) values when all the weights are close to zero (i.e. at initialization).
+				var offset = bounds[i].rvs(origParams[i]);
+				boundedParams[i] = bounds[i].fwd(params[i] + offset);
+			}
+			// ////
+			// // if (tensor.any(boundedParams, function(x) { return !isFinite(ad_primal(x)); })) {
+			// if (tensor.any(boundedParams, function(x) { return Math.abs(ad_primal(x)) > 100; })) {
+			// 	console.log('-----------');
+			// 	console.log('currLatentState:');
+			// 	console.log(currLatentState.map(ad_primal));
+			// 	console.log('stateFeatures:');
+			// 	console.log(stateFeatures.map(ad_primal));
+			// 	console.log('predictWeights:');
+			// 	console.log(tensor.map(predictWeights, function(x) { return ad_primal(x); }));
+			// 	console.log('predictBias:');
+			// 	console.log(predictBias.map(ad_primal));
+			// 	console.log('pre-bounds predicted params:');
+			// 	console.log(params.map(ad_primal));
+			// 	console.log('final predicted params:');
+			// 	console.log(boundedParams.map(ad_primal));
+			// }
+			// ////
+			return boundedParams;
 		}
 	};
 }

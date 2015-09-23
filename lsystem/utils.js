@@ -127,13 +127,16 @@ var TempSchedules = {
 var FeatureExtractors = {
 	state: function(currState) {
 		return [currState.depth, currState.pos.x, currState.pos.y,
-				currState.angle, currState.width];
+				Math.cos(currState.angle), Math.sin(currState.angle),
+				currState.width];
+		// return [currState.pos.x, currState.pos.y];
 	},
 	treeNode: function(treeNode) {
 		if (treeNode === undefined)
 			return undefined;
 		return [treeNode.branch.start.x, treeNode.branch.start.y,
-				treeNode.branch.angle, treeNode.branch.width,
+				Math.cos(treeNode.branch.angle), Math.sin(treeNode.branch.angle),
+				treeNode.branch.width,
 				treeNode.branch.end.x, treeNode.branch.end.y];
 	}
 }

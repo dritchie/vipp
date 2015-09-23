@@ -39,6 +39,22 @@ function map(tensor, fn) {
 	}
 }
 
+function map2(t1, t2, fn) {
+	var dim1 = getdim(t1);
+	var dim2 = getdim(t2);
+	assert(numeric.same(dim1, dim2));
+	if (dim1.length === 0)
+		return fn(t1, t2);
+	else {
+		return numeric._biforeach2(t1, t2, dim1, 0, function(x, y) {
+			var ret = Array(x.length);
+			for (var i = 0; i < x.length; i++)
+				ret[i] = fn(x[i], y[i]);
+			return ret;
+		});
+	}
+}
+
 function mapeq(tensor, fn) {
 	var dim = getdim(tensor);
 	assert(dim.length !== 0, 'tensor.mapeq does not apply to scalar arguments');
@@ -89,6 +105,7 @@ var maxreduce = numeric.mapreduce('accum = Math.max(xi, accum)', '-Infinity');
 module.exports = {
 	create: create,
 	map: map,
+	map2: map2,
 	mapeq: mapeq,
 	foreach: foreach,
 	any: any,

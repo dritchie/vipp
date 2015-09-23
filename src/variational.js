@@ -220,6 +220,12 @@ function makeGuideGradThunk(guide, params, args, allowZeroDerivatives) {
       				console.log('name: ' + name);
       				assert(false, 'Found zero in guide ' + propName + ' gradient!');
       			}
+      			if (tensor.any(p, function(x) { return isNaN(x.sensitivity); })) {
+      				// traceProp.print();
+      				// console.log('-------------------------------------------------');
+      				console.log('name: ' + name);
+      				assert(false, 'Found NaN in guide ' + propName + ' gradient!');
+      			}
       			ret.gradient[name] = tensor.map(p, function(x) { return x.sensitivity; });
       		}
       	}
@@ -263,7 +269,6 @@ function infer(target, guide, args, opts) {
 	var convergeEps = opt(opts.convergeEps, 0.1);
 	var verbosity = opt(opts.verbosity, 0);
 	var recordStepStats = opt(opts.recordStepStats, false);
-	var regularize = opt(opts.regularize, undefined);
 	var gradientOpts = opt(opts.gradientOpts, {
 		method: 'ELBO'
 	});
@@ -287,36 +292,53 @@ function infer(target, guide, args, opts) {
 		var mDecayRate = opt(opts.mDecayRate, 0.9);
 		var vDecayRate = opt(opts.vDecayRate, 0.99);
 		var adamEps = opt(opts.adamEps, 1e-8)
-	} else throw 'Unrecognized optimizeMethod "' + optimizeMethod + '"';
+	} else if (optimizeMethod === 'None') {
+		var learnRate = opt(opts.initLearnRate, 0.5);
+	} else {
+		throw 'Unrecognized optimizeMethod "' + optimizeMethod + '"';
+	}
 
 	var tempSchedule = opt(opts.tempSchedule, function() { return 1; });
 
 
-	// Define the regularizer for variational parameters
-	if (regularize !== undefined) {
-		var rweight = regularize.weight;
-		if (regularize.method === 'L2') {
-			regularize = function(p0, p1, learningRate) {
-				return numeric.sub(p1, numeric.mul(learningRate*rweight, p0));
-			};
-		} else
-		if (regularize.method === 'L1') {
-			// 'Clipped' L1 regularization for stochastic gradient descent.
-			// Sources:
-			// https://lingpipe.files.wordpress.com/2008/04/lazysgdregression.pdf
-			// http://aclweb.org/anthology/P/P09/P09-1054.pdf
-			regularize = function(p0, p1, learningRate) {
-				var w = rweight*learningRate;
-				return tensor.map(p1, function(x) {
-					if (x > 0)
-						return Math.max(0, p1 - w);
-					else if (x < 0)
-						return Math.min(0, p1 + w);
-					else return x;
-				});
-			}
-		}
-	} else regularize = function(p0, p1, learningRate) { return p1; };
+	// Regularization stuff
+	var regularizationWeight = opt(opts.regularizationWeight, 0);
+	// var regularize = opt(opts.regularize, undefined);
+	// if (regularize !== undefined) {
+	// 	var rweight = regularize.weight;
+	// 	if (regularize.method === 'L2') {
+	// 		regularize = function(p0, p1, learningRate) {
+	// 			// return numeric.sub(p1, numeric.muleq(numeric.mul(learningRate, rweight), p0));
+	// 			var ret = numeric.sub(p1, numeric.muleq(numeric.mul(learningRate, rweight), p0));
+	// 			// console.log('-------------------------')
+	// 			// console.log('p0:');
+	// 			// console.log(p0);
+	// 			// console.log('p1:');
+	// 			// console.log(p1);
+	// 			// console.log('learningRate:');
+	// 			// console.log(learningRate);
+	// 			// console.log('ret:');
+	// 			// console.log(ret);
+	// 			return ret;
+	// 		};
+	// 	} else
+	// 	if (regularize.method === 'L1') {
+	// 		// 'Clipped' L1 regularization for stochastic gradient descent.
+	// 		// Sources:
+	// 		// https://lingpipe.files.wordpress.com/2008/04/lazysgdregression.pdf
+	// 		// http://aclweb.org/anthology/P/P09/P09-1054.pdf
+	// 		regularize = function(p0, p1, learningRate) {
+	// 			var w = numeric.mul(rweight, learningRate);
+	// 			return tensor.map2(p1, w, function(p1_, w_) {
+	// 				if (p1_ > 0)
+	// 					return Math.max(0, p1_ - w_);
+	// 				else if (p1_ < 0)
+	// 					return Math.min(0, p1_ + w_);
+	// 				else return p1_;
+	// 			});
+	// 		}
+	// 	}
+	// } else regularize = function(p0, p1, learningRate) { return p1; };
 
 	// Default trace
 	var trace = new Trace();
@@ -570,6 +592,8 @@ function infer(target, guide, args, opts) {
 		var maxDelta = 0;
 		for (var name in gradEst) {
 			var grad = gradEst[name];
+			if (regularizationWeight > 0)
+				numeric.subeq(grad, numeric.mul(regularizationWeight, params.values[name]));
 			var dim = numeric.dim(grad);
 			if (!allowZeroDerivatives && tensor.any(grad, function(x) { x === 0.0; })) {
 				console.log('name: ' + name);
@@ -578,7 +602,9 @@ function infer(target, guide, args, opts) {
 				'Detected a zero in the gradient!');
 			}
 			var weight;
-			if (optimizeMethod === 'AdaGrad') {
+			if (optimizeMethod === 'None') {
+				weight = learnRate;
+			} else if (optimizeMethod === 'AdaGrad') {
 				if (!runningG2.hasOwnProperty(name))
 					runningG2[name] = numeric.rep(dim, 0);
 				numeric.addeq(runningG2[name], numeric.mul(grad, grad));
@@ -594,9 +620,10 @@ function infer(target, guide, args, opts) {
 				var vt = numeric.div(runningV[name], (1 - Math.pow(vDecayRate, currStep+1)));
 				weight = numeric.div(numeric.mul(stepSize, mt), numeric.add(numeric.sqrt(vt), adamEps));
 			}
-			if (!numeric.isFinite(weight)) {
+			if (!numeric.all(numeric.isFinite(weight))) {
 				console.log('name: ' + name);
 				console.log('grad: ' + grad);
+				console.log('weight: ' + weight);
 				if (optimizeMethod === 'AdaGrad')
 					console.log('runningG2: ' + runningG2[name]);
 				else if (optimizeMethod === 'Adam') {
@@ -605,10 +632,12 @@ function infer(target, guide, args, opts) {
 				}
 				assert(false, "Detected non-finite param update weight!");
 			}
+
 			var delta = numeric.mul(weight, grad);
-			var p0 = params.values[name];
-			var p1 = numeric.add(p0, delta);
-			params.values[name] = regularize(p0, p1, weight);
+			numeric.addeq(params.values[name], delta);
+			// var p0 = params.values[name];
+			// var p1 = numeric.add(p0, delta);
+			// params.values[name] = regularize(p0, p1, weight);
 
 			// When recording changes to scalar params, do this in the transformed space
 			var t = params.transforms[name];

@@ -28,7 +28,8 @@ var branch = function(depth, currBranch, branches) {
 	var newbranch = line(currBranch.end, newang, width, length);
 	var newbranches = branches.concat([newbranch]);
 	// Terminate?
-	if (flip(Math.exp(-0.045*depth))) {
+	// if (flip(Math.exp(-0.045*depth))) {
+	if (depth < 5) {
 		// Continue or fork?
 		if (flip(0.5)) {
 			return branch(depth + 1, newbranch, newbranches);

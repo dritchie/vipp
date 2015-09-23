@@ -52,6 +52,13 @@ function collectSample(callsite, inputs, inputCache) {
 function normalizeInputs(callsite, inputs, inputCache) {
 	var cacheEntry = inputCache.cache[callsite];
 	assert(cacheEntry !== undefined, 'Attempting to normalize NN inputs for which no sample stats exist!');
+	// if (callsite === 'stateFeatures') {
+	// 	console.log('stateFeatures means and stddevs:');
+	// 	console.log(cacheEntry.means);
+	// 	console.log(cacheEntry.stddevs);
+	// 	console.log('inputs received:');
+	// 	console.log(inputs);
+	// }
 	// return numeric.diveq(numeric.sub(inputs, cacheEntry.mins), cacheEntry.ranges);
 	return numeric.diveq(numeric.sub(inputs, cacheEntry.means), cacheEntry.stddevs);
 }

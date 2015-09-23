@@ -19,10 +19,7 @@ var S_tape = function(epsilon, primal) {
 S_tape.prototype = {
   determineFanout: function() { this.fanout += 1; },
   reversePhase: function(sensitivity) {
-    //// Switch to support higher-order derivatives
-    // this.sensitivity = d_add(this.sensitivity, sensitivity)
     this.sensitivity += sensitivity;
-    ////
     this.fanout -= 1;
   },
   reversePhaseDebug: function(sensitivity, tablevel) {
@@ -40,6 +37,14 @@ S_tape.prototype = {
   resetState: function() {
     this.sensitivity = 0.0;
     this.fanout = 0;
+  },
+  checkNaN: function() {
+    for (var i = 0; i < arguments.length; i++) {
+      if (isNaN(arguments[i])) {
+        this.print();
+        throw 'Found NaN in AD tape!';
+      }
+    }
   }
 };
 var isTape = function(t) { return t instanceof S_tape; };
@@ -57,16 +62,13 @@ S_tape1.prototype.determineFanout = function() {
     this.tape.determineFanout();
 }
 S_tape1.prototype.reversePhase = function(sensitivity) {
-  //// Switch to support higher-order derivatives
-  // this.sensitivity = d_add(this.sensitivity, sensitivity)
   this.sensitivity += sensitivity;
-  ////
   this.fanout -= 1;
   if (this.fanout === 0) {
-    //// Switch to support higher-order derivatives
-    // this.tape.reversePhase(d_mul(this.sensitivity, this.factor));
+    // ////
+    // this.checkNaN(this.sensitivity*this.factor);
+    // ////
     this.tape.reversePhase(this.sensitivity*this.factor);
-    ////
   }
 }
 S_tape1.prototype.reversePhaseDebug = function(sensitivity, tablevel) {
@@ -80,6 +82,7 @@ S_tape1.prototype.reversePhaseDebug = function(sensitivity, tablevel) {
 S_tape1.prototype.print = function(tablevel) {
   tablevel = tablevel === undefined ? 0 : tablevel;
   S_tape.prototype.print.call(this, tablevel);
+  // console.log(spaces(tablevel) + 'factor: ' + this.factor);
   this.tape.print(tablevel + 1);
 }
 S_tape1.prototype.resetState = function() {
@@ -104,26 +107,22 @@ S_tape2.prototype.determineFanout = function() {
   }
 }
 S_tape2.prototype.reversePhase = function(sensitivity) {
-   //// Switch to support higher-order derivatives
-  // this.sensitivity = d_add(this.sensitivity, sensitivity)
   this.sensitivity += sensitivity;
-  ////
   this.fanout -= 1;
   if (this.fanout === 0) {
-    //// Switch to support higher-order derivatives
+    // ////
+    // this.checkNaN(this.sensitivity*this.factor1, this.sensitivity*this.factor2);
+    // ////
     this.tape1.reversePhase(this.sensitivity*this.factor1);
     this.tape2.reversePhase(this.sensitivity*this.factor2);
-    // this.tape1.reversePhase(d_mul(this.sensitivity, this.factor1));
-    // this.tape2.reversePhase(d_mul(this.sensitivity, this.factor2));
-    ////
   }
 }
 S_tape2.prototype.reversePhaseDebug = function(sensitivity, tablevel) {
   tablevel = tablevel === undefined ? 0 : tablevel;
   S_tape.prototype.reversePhaseDebug.call(this, sensitivity, tablevel);
   if (this.fanout === 0) {
-    console.log(spaces(tablevel) + 'propagating. factor1 =  ' + this.factor1 + ', total: ' + this.sensitivity*this.factor1);
-    console.log(spaces(tablevel) + 'propagating. factor2 =  ' + this.factor2 + ', total: ' + this.sensitivity*this.factor2);
+    // console.log(spaces(tablevel) + 'propagating. factor1 =  ' + this.factor1 + ', total: ' + this.sensitivity*this.factor1);
+    // console.log(spaces(tablevel) + 'propagating. factor2 =  ' + this.factor2 + ', total: ' + this.sensitivity*this.factor2);
     this.tape1.reversePhaseDebug(this.sensitivity*this.factor1, tablevel + 1);
     this.tape2.reversePhaseDebug(this.sensitivity*this.factor2, tablevel + 1);
   }
@@ -131,6 +130,7 @@ S_tape2.prototype.reversePhaseDebug = function(sensitivity, tablevel) {
 S_tape2.prototype.print = function(tablevel) {
   tablevel = tablevel === undefined ? 0 : tablevel;
   S_tape.prototype.print.call(this, tablevel);
+  console.log(spaces(tablevel) + 'factor1: ' + this.factor1 + ', factor2: ' + this.factor2);
   this.tape1.print(tablevel + 1);
   this.tape2.print(tablevel + 1);
 }
@@ -142,20 +142,10 @@ S_tape2.prototype.resetState = function() {
 
 var lift_realreal_to_real = function(f, df_dx1, df_dx2) {
   var liftedfn;
-  //// Switch to support higher-order derivatives
   var fn = f;
-  // var fn = liftedfn;
-  ////
   liftedfn = function(x_1, x_2) {
     if (isTape(x_1)) {
       if (isTape(x_2))
-        //// Un-comment to support higher-order derivatives
-        // if (x_1.epsilon < x_2.epsilon)
-        //   return new S_tape1(x_2.epsilon, fn(x_1, x_2.primal), df_dx2(x_1, x_2.primal), x_2)
-        // else if (x_2.epsilon < x_1.epsilon)
-        //   return new S_tape1(x_1.epsilon, fn(x_1.primal, x_2), df_dx1(x_1.primal, x_2), x_1)
-        // else
-        ////
           return new S_tape2(f.name, x_1.epsilon,
                       fn(x_1.primal, x_2.primal),
                       df_dx1(x_1.primal, x_2.primal), df_dx2(x_1.primal, x_2.primal),
@@ -175,10 +165,7 @@ var lift_realreal_to_real = function(f, df_dx1, df_dx2) {
 
 var lift_real_to_real = function(f, df_dx) {
   var liftedfn;
-  //// Switch to support higher-order derivatives
   var fn = f;
-  // var fn = liftedfn;
-  ////
   liftedfn = function(x1) {
     if (isTape(x1))
       return new S_tape1(f.name, x1.epsilon, fn(x1.primal), df_dx(x1.primal), x1);
@@ -212,7 +199,6 @@ var f_leq = function f_leq(a,b) {return a<=b};
 
 
 var overloader_2cmp = function(baseF) {
-  //// Switch to support higher-order derivatives
   var fn = function(x1, x2) {
     if (isTape(x1)) {
       if (isTape(x2))
@@ -224,15 +210,6 @@ var overloader_2cmp = function(baseF) {
     else
       return baseF(x1, x2);
   }
-  // var fn = function(x1, x2) {
-  //     if (isTape(x1))
-  //       return fn(x1.primal, x2);
-  //     else if (isTape(x2))
-  //       return fn(x1, x2.primal);
-  //     else
-  //       return baseF(x1, x2);
-  //   }
-  ////
   return fn;
 };
 
@@ -241,12 +218,8 @@ var oneF = function(x1, x2){return 1.0;};
 var m_oneF = function(x1, x2){return -1.0;};
 var firstF = function(x1, x2){return x1;};
 var secondF = function(x1, x2){return x2;};
-//// Switch to support higher-order derivatives
 var div2F = function(x1, x2){return 1/x2;};
 var divNF = function(x1, x2){return -x1/(x2*x2);};
-// var div2F = function(x1, x2){return d_div(1,x2);};
-// var divNF = function(x1, x2){return d_div(d_sub(0,x1), d_mul(x2, x2));};
-////
 
 /** lifted functions (overloaded) **/
 var d_add = lift_realreal_to_real(f_add, oneF, oneF);
@@ -268,7 +241,6 @@ var d_leq = overloader_2cmp(f_leq);
 
 var d_floor = lift_real_to_real(Math.floor, zeroF);
 var d_ceil = lift_realreal_to_real(Math.ceil, zeroF);
-//// Switch to support higher-order derivatives
 var d_sqrt = lift_real_to_real(Math.sqrt, function(x){return 1/(2*Math.sqrt(x))});
 var d_exp = lift_real_to_real(Math.exp, function(x){return Math.exp(x)});
 var d_log = lift_real_to_real(Math.log, function(x){return 1/x});
@@ -280,19 +252,6 @@ var d_cos = lift_real_to_real(Math.cos, function(x){return -Math.sin(x)});
 var d_atan_core = lift_realreal_to_real(Math.atan2,
                                function(x1, x2){return x2/(x1*x1 + x2*x2);},
                                function(x1, x2){return -x1/(x1*x1 + x2*x2);});
-// var d_sqrt = lift_real_to_real(Math.sqrt, function(x){return d_div(1, d_mul(2.0, d_sqrt(x)))});
-// var d_exp = lift_real_to_real(Math.exp, function(x){return d_exp(x)});
-// var d_log = lift_real_to_real(Math.log, function(x){return d_div(1,x)});
-// var d_floor = lift_real_to_real(Math.floor, zeroF);
-// var d_pow = lift_realreal_to_real(Math.pow,
-//                                function(x1, x2){return d_mul(x2, d_pow(x1, d_sub(x2, 1)));},
-//                                function(x1, x2){return d_mul(d_log(x1), d_pow(x1, x2));});
-// var d_sin = lift_real_to_real(Math.sin, function(x){return d_cos(x)});
-// var d_cos = lift_real_to_real(Math.cos, function(x){return d_sub(0, d_sin(x))});
-// var d_atan_core = lift_realreal_to_real(Math.atan2,
-//                                function(x1, x2){return d_div(x2, d_add(d_mul(x1,x1), d_mul(x2,x2)));},
-//                                function(x1, x2){return d_div(d_sub(0,x1), d_add(d_mul(x1,x1), d_mul(x2,x2)));});
-////
 var d_atan = function(x1, x2) {
   x2 = x2 === undefined ? 1 : x2; // just atan, not atan2
   return d_atan_core(x1, x2);
