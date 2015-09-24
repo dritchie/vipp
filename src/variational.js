@@ -303,6 +303,42 @@ function infer(target, guide, args, opts) {
 
 	// Regularization stuff
 	var regularizationWeight = opt(opts.regularizationWeight, 0);
+	// var regularize = opt(opts.regularize, undefined);
+	// if (regularize !== undefined) {
+	// 	var rweight = regularize.weight;
+	// 	if (regularize.method === 'L2') {
+	// 		regularize = function(p0, p1, learningRate) {
+	// 			// return numeric.sub(p1, numeric.muleq(numeric.mul(learningRate, rweight), p0));
+	// 			var ret = numeric.sub(p1, numeric.muleq(numeric.mul(learningRate, rweight), p0));
+	// 			// console.log('-------------------------')
+	// 			// console.log('p0:');
+	// 			// console.log(p0);
+	// 			// console.log('p1:');
+	// 			// console.log(p1);
+	// 			// console.log('learningRate:');
+	// 			// console.log(learningRate);
+	// 			// console.log('ret:');
+	// 			// console.log(ret);
+	// 			return ret;
+	// 		};
+	// 	} else
+	// 	if (regularize.method === 'L1') {
+	// 		// 'Clipped' L1 regularization for stochastic gradient descent.
+	// 		// Sources:
+	// 		// https://lingpipe.files.wordpress.com/2008/04/lazysgdregression.pdf
+	// 		// http://aclweb.org/anthology/P/P09/P09-1054.pdf
+	// 		regularize = function(p0, p1, learningRate) {
+	// 			var w = numeric.mul(rweight, learningRate);
+	// 			return tensor.map2(p1, w, function(p1_, w_) {
+	// 				if (p1_ > 0)
+	// 					return Math.max(0, p1_ - w_);
+	// 				else if (p1_ < 0)
+	// 					return Math.min(0, p1_ + w_);
+	// 				else return p1_;
+	// 			});
+	// 		}
+	// 	}
+	// } else regularize = function(p0, p1, learningRate) { return p1; };
 
 	// Default trace
 	var trace = new Trace();
@@ -384,10 +420,12 @@ function infer(target, guide, args, opts) {
 		}
 		// Compute AdaGrad learning rate and control variate
 		var elboGradEst = {};
+		var aStar;
 		if (componentWiseAStar) {
+			aStar = {};
 			for (var name in sumGrad) {
-				var aStar = numeric.div(sumWeightedGradSq[name] / sumGradSq[name]);
-				elboGradEst[name] = numeric.div(numeric.sub(sumWeightedGrad[name], numeric.mul(sumGrad[name], aStar)), nSamples);
+				aStar[name] = numeric.div(sumWeightedGradSq[name] / sumGradSq[name]);
+				elboGradEst[name] = numeric.div(numeric.sub(sumWeightedGrad[name], numeric.mul(sumGrad[name], aStar[name])), nSamples);
 			}
 		} else {
 			var numerSum = 0.0;
@@ -396,7 +434,7 @@ function infer(target, guide, args, opts) {
 				numerSum += numeric.sum(sumWeightedGradSq[name]);
 				denomSum += numeric.sum(sumGradSq[name]);
 			}
-			var aStar = numerSum / denomSum;
+			aStar = numerSum / denomSum;
 			for (var name in sumGrad) {
 				elboGradEst[name] = numeric.div(numeric.sub(sumWeightedGrad[name], numeric.mul(sumGrad[name], aStar)), nSamples);
 				if (!allowZeroDerivatives && tensor.any(elboGradEst[name], function(x) { x === 0; })) {
@@ -411,7 +449,12 @@ function infer(target, guide, args, opts) {
 		}
 		if (verbosity > 3) {
 			console.log('  sumGrad: ' +  JSON.stringify(sumGrad));
+			console.log('  sumGradSq: ' +  JSON.stringify(sumGradSq));
 			console.log('  sumWeightedGrad: ' +  JSON.stringify(sumWeightedGrad));
+			console.log('  sumWeightedGradSq: ' +  JSON.stringify(sumWeightedGradSq));
+			console.log('  aStar: ' + JSON.stringify(aStar));
+			console.log('  sumScoreDiff: ' + sumScoreDiff);
+			console.log('  avgScoreDiff: ' + sumScoreDiff / nSamples);
 			console.log('  elboGradEst: ' +  JSON.stringify(elboGradEst));
 		}
 		return {

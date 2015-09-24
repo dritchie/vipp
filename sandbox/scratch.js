@@ -225,10 +225,10 @@ var guide = function(params) {
 
 console.time('time');
 var result = variational.infer(target, guide, undefined, {
-	verbosity: 3,
+	verbosity: 4,
 	// nSamples: 1,
-	nSamples: 100,
-	nSteps: 1000,
+	nSamples: 2,
+	nSteps: 1,
 	// nSteps: 20,
 	convergeEps: 0.1,
 	// convergeEps: 0.01,

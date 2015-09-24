@@ -212,23 +212,23 @@ var makeProgram = function(opts) {
 
 var variationalTest = function() {
 	var target = makeProgram({family: 'target'});
-	// var guide =  makeProgram({family: 'meanField'});
-	var guide = makeProgram({family: 'neural',
-		stateFeatures: lutils.FeatureExtractors.state,
-		treeNodeFeatures: lutils.FeatureExtractors.treeNode,
-		latentN: 10,
-		nNormalizeSamples: 1000
-	});
+	var guide =  makeProgram({family: 'meanField'});
+	// var guide = makeProgram({family: 'neural',
+	// 	stateFeatures: lutils.FeatureExtractors.state,
+	// 	treeNodeFeatures: lutils.FeatureExtractors.treeNode,
+	// 	latentN: 10,
+	// 	nNormalizeSamples: 1000
+	// });
 
 	var result = variational.infer(target, guide, undefined, {
 		verbosity: 3,
 		nSamples: 100,
-		nSteps: 800,
+		nSteps: 200,
 		convergeEps: 0.1,
 		initLearnrate: 1,
 		allowZeroDerivatives: true,
-		tempSchedule: lutils.TempSchedules.linearStop(0.5),
-		regularizationWeight: 100
+		// tempSchedule: lutils.TempSchedules.linearStop(0.5),
+		// regularizationWeight: 100
 	});
 
 	console.log(result.params.values);
