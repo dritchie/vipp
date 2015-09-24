@@ -303,42 +303,6 @@ function infer(target, guide, args, opts) {
 
 	// Regularization stuff
 	var regularizationWeight = opt(opts.regularizationWeight, 0);
-	// var regularize = opt(opts.regularize, undefined);
-	// if (regularize !== undefined) {
-	// 	var rweight = regularize.weight;
-	// 	if (regularize.method === 'L2') {
-	// 		regularize = function(p0, p1, learningRate) {
-	// 			// return numeric.sub(p1, numeric.muleq(numeric.mul(learningRate, rweight), p0));
-	// 			var ret = numeric.sub(p1, numeric.muleq(numeric.mul(learningRate, rweight), p0));
-	// 			// console.log('-------------------------')
-	// 			// console.log('p0:');
-	// 			// console.log(p0);
-	// 			// console.log('p1:');
-	// 			// console.log(p1);
-	// 			// console.log('learningRate:');
-	// 			// console.log(learningRate);
-	// 			// console.log('ret:');
-	// 			// console.log(ret);
-	// 			return ret;
-	// 		};
-	// 	} else
-	// 	if (regularize.method === 'L1') {
-	// 		// 'Clipped' L1 regularization for stochastic gradient descent.
-	// 		// Sources:
-	// 		// https://lingpipe.files.wordpress.com/2008/04/lazysgdregression.pdf
-	// 		// http://aclweb.org/anthology/P/P09/P09-1054.pdf
-	// 		regularize = function(p0, p1, learningRate) {
-	// 			var w = numeric.mul(rweight, learningRate);
-	// 			return tensor.map2(p1, w, function(p1_, w_) {
-	// 				if (p1_ > 0)
-	// 					return Math.max(0, p1_ - w_);
-	// 				else if (p1_ < 0)
-	// 					return Math.min(0, p1_ + w_);
-	// 				else return p1_;
-	// 			});
-	// 		}
-	// 	}
-	// } else regularize = function(p0, p1, learningRate) { return p1; };
 
 	// Default trace
 	var trace = new Trace();
@@ -634,10 +598,9 @@ function infer(target, guide, args, opts) {
 			}
 
 			var delta = numeric.mul(weight, grad);
-			numeric.addeq(params.values[name], delta);
-			// var p0 = params.values[name];
-			// var p1 = numeric.add(p0, delta);
-			// params.values[name] = regularize(p0, p1, weight);
+			var p0 = params.values[name];
+			var p1 = numeric.add(p0, delta);
+			params.values[name] = p1;
 
 			// When recording changes to scalar params, do this in the transformed space
 			var t = params.transforms[name];

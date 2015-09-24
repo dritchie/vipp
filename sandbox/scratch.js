@@ -168,7 +168,7 @@
 
 // ----------------------------------------------------------------------------
 
-var targetsum = 10.0
+var targetsum = 10.0;
 
 var target = function() {
 	var x1 = gaussian(0.0, 5.0);
@@ -176,8 +176,8 @@ var target = function() {
 	var x3 = gaussian(0.0, 5.0);
 	var sum = x1 + x2 + x3;
 	factor(gaussianERP.score([targetsum, 0.1], sum));
-	return sum;
-}
+	return [x1, x2, x3];
+};
 
 // // Mean-field
 // var guide = function(params) {
@@ -185,7 +185,7 @@ var target = function() {
 // 	var x1 = gaussian(p(0.0), p(5.0));
 // 	var x2 = gaussian(p(0.0), p(5.0));
 // 	var x3 = gaussian(p(0.0), p(5.0));
-// 	return x1 + x2 + x3;
+// 	return [x1, x2, x3];
 // }
 
 // // Mean-field w/ random initialization
@@ -196,7 +196,7 @@ var target = function() {
 // 	var x1 = gaussian(mup(), sigp());
 // 	var x2 = gaussian(mup(), sigp());
 // 	var x3 = gaussian(mup(), sigp());
-// 	return x1 + x2 + x3;
+// 	return [x1, x2, x3];
 // }
 
 // // Context-sensitive
@@ -205,41 +205,46 @@ var target = function() {
 // 	var x1 = gaussian(p(0.0), p(5.0));
 // 	var x2 = gaussian(p(0.0) + p(0.0)*x1, p(5.0));
 // 	var x3 = gaussian(p(0.0) + p(0.0)*x1 + p(0.0)*x2, p(5.0));
-// 	return x1 + x2 + x3;
+// 	return [x1, x2, x3];
 // }
+
+var bounds = require('src/boundsTransforms');
 
 // Context-sensitive w/ random initialization
 var guide = function(params) {
 	var p1 = function() { return param(params, undefined, undefined, gaussianERP.sample, [0.0, 1.0]); };
-	// var p2 = function() { return param(params, undefined, undefined, gammaERP.sample, [1.0, 1.0]); };
-	var p2 = function() { return Math.abs(param(params, undefined, undefined, gammaERP.sample, [1.0, 1.0])); };
+	var p2 = function() { return param(params, undefined, bounds.nonNegative, gammaERP.sample, [1.0, 1.0]); };
 	var x1 = gaussian(p1(), p2());
 	var x2 = gaussian(p1() + p1()*x1, p2());
 	var x3 = gaussian(p1() + p1()*x1 + p1()*x2, p2());
-	return x1 + x2 + x3;
-}
+	return [x1, x2, x3];
+};
 
 // ----------------------------------------------------------------------------
 
 
 console.time('time');
-var result = infer(target, guide, undefined, {
-	verbosity: 1,
+var result = variational.infer(target, guide, undefined, {
+	verbosity: 3,
 	// nSamples: 1,
 	nSamples: 100,
-	nSteps: 5000,
+	nSteps: 1000,
 	// nSteps: 20,
 	convergeEps: 0.1,
 	// convergeEps: 0.01,
 	// initLearnRate: 0.5
-	initLearnRate: 0.25,
+	// initLearnRate: 0.25,
 	// initLearnRate: 0.1
 	// recordStepStats: true
 });
+console.log(result.params);
 console.log('Samples from guide:');
-for (var i = 0; i < 10; i++)
-	console.log(guide(result.params));
-return result;
+for (var i = 0; i < 20; i++) {
+	var nums = guide(result.params);
+	var sum = nums[0] + nums[1] + nums[2];
+	console.log(sum + ': ' + nums);
+}
+// return result;
 
 
 
