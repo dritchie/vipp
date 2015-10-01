@@ -424,7 +424,7 @@ function infer(target, guide, args, opts) {
 		if (componentWiseAStar) {
 			aStar = {};
 			for (var name in sumGrad) {
-				aStar[name] = numeric.div(sumWeightedGradSq[name] / sumGradSq[name]);
+				aStar[name] = numeric.div(sumWeightedGradSq[name], sumGradSq[name]);
 				elboGradEst[name] = numeric.div(numeric.sub(sumWeightedGrad[name], numeric.mul(sumGrad[name], aStar[name])), nSamples);
 			}
 		} else {
